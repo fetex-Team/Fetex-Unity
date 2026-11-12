@@ -1,0 +1,83 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: afede76602f07c6408234ae8549198db, type: 3}
+  m_Name: GangnamCityAssets
+  m_EditorClassIdentifier: Assembly-CSharp::Fetex.CityAssetLibrary
+  roadAsphalt: {fileID: 2100000, guid: dd3587fdaebcb554b9f88706d7de2482, type: 2}
+  asphaltTileMeters: 8
+  laneWhite: {fileID: 2100000, guid: 0a84c8747ac8da143a4e15fa16c0e885, type: 2}
+  laneYellow: {fileID: 2100000, guid: e26b670713fffda41b1847703b1972ae, type: 2}
+  sidewalk: {fileID: 2100000, guid: bb8d3ce3b2bbd724081463c329a19f4a, type: 2}
+  sidewalkTileMeters: 3
+  curb: {fileID: 2100000, guid: e241a6cd49839fe478e391adc4a70458, type: 2}
+  ground: {fileID: 2100000, guid: 503b25d247611bb4ea52d523ec039b0f, type: 2}
+  groundTileMeters: 6
+  buildings:
+  - prefab: {fileID: 2156148592747984971, guid: 9b468bcd4d8075a40935ac6377d8c055, type: 3}
+    size: {x: 21.378374, y: 32.942493, z: 24.068264}
+    weight: 1
+  - prefab: {fileID: 6050256724894008207, guid: 4ac09542bbc3b5840b876835e234dabe, type: 3}
+    size: {x: 23.82253, y: 70.28603, z: 29.849682}
+    weight: 1
+  - prefab: {fileID: 3658317289797768359, guid: 6b704c00ed80d7c4aa2e078026736d35, type: 3}
+    size: {x: 33.18651, y: 78.372375, z: 33.186535}
+    weight: 1
+  - prefab: {fileID: 333696190062797705, guid: e7f9aa7521f867c498c2fdc7edfe2b43, type: 3}
+    size: {x: 21.983091, y: 91.689476, z: 31.192497}
+    weight: 1
+  - prefab: {fileID: 59882921143317677, guid: 3c4d5d6901772694a9cad0a499ee9ac4, type: 3}
+    size: {x: 19.28329, y: 84.84396, z: 29.617636}
+    weight: 1
+  - prefab: {fileID: 3483697238672674834, guid: a0fba67590f92e447af9249d4716d177, type: 3}
+    size: {x: 23.128666, y: 62.82195, z: 29.185556}
+    weight: 1
+  - prefab: {fileID: 1282733233907471557, guid: 24cdfd8049ca9f14ca09c550555d1695, type: 3}
+    size: {x: 20.496702, y: 62.82195, z: 29.185566}
+    weight: 1
+  - prefab: {fileID: 5199185025341249481, guid: 6ad3665ff4260d0408a06f9847ca6c10, type: 3}
+    size: {x: 30.558495, y: 49.48892, z: 35.029705}
+    weight: 0.25
+  - prefab: {fileID: 4491060974381646061, guid: 63859c9e43dcaf44aa33998d9f576984, type: 3}
+    size: {x: 44.082993, y: 87.47334, z: 29.023664}
+    weight: 1
+  - prefab: {fileID: 2080272747064456302, guid: 13f29ecfaf1cddc4c9679703dc918870, type: 3}
+    size: {x: 38.91736, y: 79.88637, z: 39.676334}
+    weight: 1
+  - prefab: {fileID: 5061764189321947618, guid: 03a0f72e545b3ed4ca29ac6c2ff71181, type: 3}
+    size: {x: 46.657326, y: 40.340004, z: 18.068115}
+    weight: 1
+  - prefab: {fileID: 4791712074727993681, guid: 68274a4a93466954bafff9303e3c33d3, type: 3}
+    size: {x: 38.999672, y: 56.645733, z: 27.632717}
+    weight: 0.5
+  - prefab: {fileID: 6523985390120149073, guid: 694428979d22dbc45915945e7a18874b, type: 3}
+    size: {x: 17.38073, y: 69.58962, z: 30.419662}
+    weight: 1
+  - prefab: {fileID: 8463187329806117579, guid: e606787ccee9c5048b7606fbd813c30f, type: 3}
+    size: {x: 25.441357, y: 45.80293, z: 31.538786}
+    weight: 1
+  - prefab: {fileID: 2493335618917966049, guid: e03e0a7bdcbd45e45862a4637d21ccf5, type: 3}
+    size: {x: 25.694328, y: 40.623512, z: 21.012068}
+    weight: 1
+  - prefab: {fileID: 9030343985733243295, guid: e633e72929ff5a64b81bae954a21ba1a, type: 3}
+    size: {x: 31.059978, y: 144.48311, z: 42.421078}
+    weight: 1
+  streetLight: {fileID: 2685332418004683164, guid: e629f6e4bbfa08843ab10d95e4c01e17, type: 3}
+  trafficSignal: {fileID: 8362487964683845818, guid: ec2256b38a09caf4f86ac4abf7aa98e3, type: 3}
+  trafficSignalLarge: {fileID: 1774547031572293900, guid: 23b782cf66aea744aa3180d4a9cf3974, type: 3}
+  streetTrees:
+  - {fileID: 4663781910818380919, guid: bcae584f32404e14abd9f3059c5a3fba, type: 3}
+  - {fileID: 1471772286060317984, guid: 7282224e9fb3c9f48ba168db4d869598, type: 3}
+  - {fileID: 6709966591438586440, guid: a654e9720737fdf4eb31bbb3a17637fc, type: 3}
+  sidewalkWidth: 3.5
+  streetLightSpacing: 32
+  treeSpacing: 15
+  treeScale: {x: 1.8, y: 2.4}

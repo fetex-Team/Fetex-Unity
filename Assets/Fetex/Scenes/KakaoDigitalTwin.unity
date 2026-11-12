@@ -369,6 +369,11 @@ MonoBehaviour:
   overviewSize: 225
   followOffset: {x: 0, y: 3.5, z: -9}
   overview: 1
+  minOverviewSize: 25
+  maxOverviewSize: 1100
+  wheelZoomStep: 0.15
+  keyPanSpeed: 0.9
+  panLimit: 1400
 --- !u!1001 &130249156
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -471,10 +476,19 @@ MonoBehaviour:
   autoPlayOnStart: 1
   playbackSpeed: 5
   groundY: 0.05
+  cityAssets: {fileID: 11400000, guid: 0282534faf7c413408dda7a591bfd777, type: 2}
+  showGangnamRoadNetwork: 1
+  showGangnamBuildings: 1
+  showH3Cells: 1
+  hideSample3x3City: 1
   isLoaded: 0
   isPlaying: 0
   currentTime: 0
   cameraView: {fileID: 48372599}
+  taxiIconPx: 9
+  selectedTaxiIconPx: 14
+  otherVehicleIconPx: 5
+  personIconPx: 6
 --- !u!4 &156196801
 Transform:
   m_ObjectHideFlags: 0
@@ -632,6 +646,74 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f8ba4c29a49e99240b25b57f7b21ae0d, type: 3}
+--- !u!1 &2041887143
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2041887146}
+  - component: {fileID: 2041887145}
+  - component: {fileID: 2041887144}
+  m_Layer: 0
+  m_Name: '[HUD]'
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2041887144
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2041887143}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7d50341606b8a9849a894c135175df70, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Fetex.FetexHud
+--- !u!114 &2041887145
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2041887143}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 19102, guid: 0000000000000000e000000000000000, type: 0}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.UIDocument
+  m_PanelSettings: {fileID: 11400000, guid: a95cff1a0705136418ff316efc4678ab, type: 2}
+  m_ParentUI: {fileID: 0}
+  sourceAsset: {fileID: 9197481963319205126, guid: 7d39c10ffd0ca88428b897ddb2b07378, type: 3}
+  m_SortingOrder: 0
+  m_Position: 0
+  m_WorldSpaceSizeMode: 1
+  m_WorldSpaceWidth: 1920
+  m_WorldSpaceHeight: 1080
+  m_PivotReferenceSize: 0
+  m_Pivot: 0
+  m_WorldSpaceCollider: {fileID: 0}
+--- !u!4 &2041887146
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2041887143}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -641,3 +723,4 @@ SceneRoots:
   - {fileID: 130249156}
   - {fileID: 48372598}
   - {fileID: 156196801}
+  - {fileID: 2041887146}

@@ -1,0 +1,137 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:Style src="HUD.uss" />
+    <ui:VisualElement name="hudRoot" class="hud-root" picking-mode="Ignore">
+        <ui:VisualElement class="top-row" picking-mode="Ignore">
+            <ui:VisualElement name="brandCard" class="card">
+                <ui:VisualElement class="brand-row">
+                    <ui:Label text="FETEX" class="brand-tag" />
+                    <ui:Label text="강남역 택시 디지털 트윈" class="brand-title" />
+                </ui:VisualElement>
+                <ui:VisualElement class="segmented">
+                    <ui:Button name="strategyRl" text="AI 재배치" class="segment" />
+                    <ui:Button name="strategyStatic" text="정적 배치" class="segment" />
+                    <ui:Button name="strategyPatrol" text="순찰 (기준)" class="segment" />
+                </ui:VisualElement>
+                <ui:Label name="strategyDetail" text=" " class="caption" />
+            </ui:VisualElement>
+            <ui:VisualElement class="spacer" picking-mode="Ignore" />
+            <ui:VisualElement name="sidePanel" class="card side-panel">
+                <ui:Label name="clockLabel" text="--:--:--" class="clock" />
+                <ui:Label name="elapsedLabel" text="리플레이 불러오는 중" class="caption" />
+                <ui:VisualElement class="progress-track">
+                    <ui:VisualElement name="progressFill" class="progress-fill" />
+                </ui:VisualElement>
+                <ui:VisualElement class="divider" />
+                <ui:VisualElement class="kpi-row">
+                    <ui:VisualElement class="kpi kpi--left">
+                        <ui:Label text="서비스 이행률" class="kpi-label" />
+                        <ui:Label name="kpiFulfill" text="-" class="kpi-value" />
+                        <ui:Label name="kpiFulfillSub" text=" " class="kpi-sub" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="kpi">
+                        <ui:Label text="평균 대기 시간" class="kpi-label" />
+                        <ui:Label name="kpiWait" text="-" class="kpi-value" />
+                        <ui:Label text="호출부터 탑승까지" class="kpi-sub" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement class="kpi-row">
+                    <ui:VisualElement class="kpi kpi--left">
+                        <ui:Label text="대기 중인 승객" class="kpi-label" />
+                        <ui:Label name="kpiWaiting" text="-" class="kpi-value" />
+                        <ui:Label name="kpiWaitingSub" text=" " class="kpi-sub" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="kpi">
+                        <ui:Label text="AI 선제 재배치" class="kpi-label" />
+                        <ui:Label name="kpiMoves" text="-" class="kpi-value" />
+                        <ui:Label text="누적 이동 지시" class="kpi-sub" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement class="divider" />
+                <ui:VisualElement class="section-head">
+                    <ui:Label text="택시 현황" class="section-title" />
+                    <ui:Label name="fleetMeta" text=" " class="section-meta" />
+                </ui:VisualElement>
+                <ui:VisualElement class="fleet-bar">
+                    <ui:VisualElement name="segIdle" class="fleet-seg is-idle" />
+                    <ui:VisualElement name="segPickup" class="fleet-seg is-pickup" />
+                    <ui:VisualElement name="segOccupied" class="fleet-seg is-occupied" />
+                    <ui:VisualElement name="segReposition" class="fleet-seg is-reposition" />
+                </ui:VisualElement>
+                <ui:VisualElement class="legend">
+                    <ui:VisualElement class="legend-item">
+                        <ui:VisualElement class="dot is-idle" />
+                        <ui:Label text="빈 차 대기" class="legend-name" />
+                        <ui:Label name="countIdle" text="0" class="legend-count" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="legend-item">
+                        <ui:VisualElement class="dot is-pickup" />
+                        <ui:Label text="픽업 이동" class="legend-name" />
+                        <ui:Label name="countPickup" text="0" class="legend-count" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="legend-item">
+                        <ui:VisualElement class="dot is-occupied" />
+                        <ui:Label text="승객 탑승" class="legend-name" />
+                        <ui:Label name="countOccupied" text="0" class="legend-count" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="legend-item">
+                        <ui:VisualElement class="dot is-reposition" />
+                        <ui:Label text="AI 재배치" class="legend-name" />
+                        <ui:Label name="countReposition" text="0" class="legend-count" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="legend-item">
+                        <ui:VisualElement class="dot is-person" />
+                        <ui:Label text="호출 승객" class="legend-name" />
+                        <ui:Label name="countPerson" text="0" class="legend-count" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement class="divider" />
+                <ui:VisualElement class="section-head">
+                    <ui:Label text="지도 레이어" class="section-title" />
+                </ui:VisualElement>
+                <ui:VisualElement class="chips">
+                    <ui:Button name="chipH3" text="H3 수요 구역" class="chip" />
+                    <ui:Button name="chipBuildings" text="건물 · 가로수" class="chip" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement class="bottom-row" picking-mode="Ignore">
+            <ui:Label name="hintLabel" text="휠 확대 · 드래그 이동 · R 처음 화면 · Tab 시점 전환 · Space 재생" class="hint" picking-mode="Ignore" />
+            <ui:VisualElement name="playbackBar" class="card playback-bar">
+                <ui:Button name="playButton" class="play-button">
+                    <ui:Label name="playGlyph" text="▶" class="play-glyph" picking-mode="Ignore" />
+                    <ui:VisualElement name="pauseIcon" class="pause-icon is-hidden" picking-mode="Ignore">
+                        <ui:VisualElement class="pause-bar" />
+                        <ui:VisualElement class="pause-bar" />
+                    </ui:VisualElement>
+                </ui:Button>
+                <ui:Label name="timeLabel" text="--:--" class="time-label" />
+                <ui:VisualElement name="timeline" class="timeline">
+                    <ui:VisualElement class="timeline-track" picking-mode="Ignore">
+                        <ui:VisualElement name="timelineFill" class="timeline-fill" picking-mode="Ignore" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="timelineKnob" class="timeline-knob" picking-mode="Ignore" />
+                </ui:VisualElement>
+                <ui:Label name="endTimeLabel" text="--:--" class="time-label time-label--end" />
+                <ui:VisualElement class="vsep" />
+                <ui:VisualElement name="speedGroup" class="segmented">
+                    <ui:Button name="speed1" text="1x" class="segment segment--small" />
+                    <ui:Button name="speed2" text="2x" class="segment segment--small" />
+                    <ui:Button name="speed5" text="5x" class="segment segment--small" />
+                    <ui:Button name="speed10" text="10x" class="segment segment--small" />
+                    <ui:Button name="speed25" text="25x" class="segment segment--small" />
+                    <ui:Button name="speed50" text="50x" class="segment segment--small" />
+                </ui:VisualElement>
+                <ui:VisualElement class="vsep" />
+                <ui:VisualElement class="segmented">
+                    <ui:Button name="viewOverview" text="탑뷰" class="segment segment--small" />
+                    <ui:Button name="viewFollow" text="추적" class="segment segment--small" />
+                </ui:VisualElement>
+                <ui:VisualElement name="taxiNav" class="taxi-nav is-hidden">
+                    <ui:Button name="prevTaxi" text="◀" class="icon-button" />
+                    <ui:Label name="taxiLabel" text=" " class="taxi-label" />
+                    <ui:Button name="nextTaxi" text="▶" class="icon-button" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

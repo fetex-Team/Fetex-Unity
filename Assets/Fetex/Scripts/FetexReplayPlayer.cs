@@ -169,6 +169,8 @@ namespace Fetex
         public float groundY = 0.05f;
 
         [Header("Real Gangnam Map Visualization")]
+        [Tooltip("도로·건물·가로시설물 에셋 묶음 (Fetex ▸ City ▸ Rebuild City Asset Library 로 생성)")]
+        public CityAssetLibrary cityAssets;
         public bool showGangnamRoadNetwork = true;
         public bool showGangnamBuildings = true;
         public bool showH3Cells = true;
@@ -196,10 +198,31 @@ namespace Fetex
 
         private readonly Dictionary<int, GameObject> vehicleInstances = new Dictionary<int, GameObject>();
         private readonly Dictionary<int, Renderer> statusMarkers = new Dictionary<int, Renderer>();
+
+        // 탑뷰 아이콘 (상태 색 핀 / 승객 마름모). 추적 시점에서는 숨기고 기존 구체 마커를 쓴다.
+        [Header("Top-view icons (screen px radius)")]
+        public float taxiIconPx = 9f;
+        public float selectedTaxiIconPx = 14f;
+        public float otherVehicleIconPx = 5f;
+        public float personIconPx = 6f;
+        private readonly Dictionary<int, Renderer> iconFills = new Dictionary<int, Renderer>();
+        private readonly Dictionary<int, Transform> iconRoots = new Dictionary<int, Transform>();
+        private readonly Dictionary<int, float> iconPx = new Dictionary<int, float>();
+        private readonly List<Transform> personIcons = new List<Transform>();
+        private bool iconMode = true;
+        private bool iconScaleDirty = true;
+        private float lastIconOrtho = -1f;
+        private int lastIconScreenH = -1;
+        private int selectedEntity = -1;
+        private readonly int[] stateCounts = new int[8];
+        private int waitingPeople;
+        private Material matIconOutline;
+        private Material matIconOutlineDark;
         private readonly Dictionary<int, int> lastVehicleStates = new Dictionary<int, int>();
         private readonly List<GameObject> personPool = new List<GameObject>();
-        private readonly List<int> activeTaxiIndices = new List<int>();
-        private int currentFollowTaxiIndex = 0;
+        // 리플레이 전체에 등장하는 택시(교대 포함 수백 대)와, 지금 프레임에 도로 위에 있는 택시
+        private readonly HashSet<int> taxiEntities = new HashSet<int>();
+        private readonly List<int> onRoadTaxis = new List<int>();
 
         private Material matIdle;
         private Material matPickup;
@@ -211,41 +234,9 @@ namespace Fetex
         private Material matPerson;
         private Material matRoadAsphalt;
         private Material matH3Boundary;
-        private Material matBuildingGlass;
-        private Material matBuildingConcrete;
-        private Material matBuildingDark;
-        private Material matBuildingSteel;
         private Material matGroundCity;
 
-        private GUIStyle headerStyle;
-        private GUIStyle boldStyle;
-        private GUIStyle statusStyle;
-        private bool isStyleInitialized = false;
-
-        public string CurrentStrategyName
-        {
-            get
-            {
-                if (replayData == null) return "None";
-                if (replayData.strategy.Contains("rl")) return "강화학습 선제재배치 (PPO + Hungarian)";
-                if (replayData.strategy.Contains("prepositioned")) return "정적 선제배치 (Hotspot Prepositioned)";
-                if (replayData.strategy.Contains("patrol")) return "일반 순찰 (Baseline Hungarian)";
-                return replayData.strategy;
-            }
-        }
-
-        public string CurrentClockString
-        {
-            get
-            {
-                if (replayData == null) return "00:00:00";
-                float totalSeconds = (replayData.startHour * 3600f) + currentTime;
-                int hours = Mathf.FloorToInt(totalSeconds / 3600f) % 24;
-                int minutes = Mathf.FloorToInt((totalSeconds % 3600f) / 60f);
-                int seconds = Mathf.FloorToInt(totalSeconds % 60f);
-                return string.Format("{0:D2}:{1:D2}:{2:D2}", hours, minutes, seconds);
-            }
-        }
+        public string CurrentClockString => ClockAt(currentTime, true);
 
         private void Awake()
         {
@@ -266,6 +257,8 @@ namespace Fetex
                 civilianCarPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/object/obs_car_1.prefab");
             if (obstaclePrefab == null)
                 obstaclePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/object/obs_kickboard_q.prefab");
+            if (cityAssets == null)
+                cityAssets = AssetDatabase.LoadAssetAtPath<CityAssetLibrary>("Assets/Fetex/Settings/GangnamCityAssets.asset");
 #endif
         }
 
@@ -301,6 +294,8 @@ namespace Fetex
             matAuto = CreateStatusMaterial(shader, new Color(1.0f, 0.5f, 0.05f), "Mat_Auto");
             matObstacle = CreateStatusMaterial(shader, new Color(0.85f, 0.15f, 0.95f), "Mat_Obstacle");
             matPerson = CreateStatusMaterial(shader, new Color(1.0f, 0.2f, 0.6f), "Mat_Person");
+            matIconOutline = CreateStatusMaterial(shader, Color.white, "Mat_IconOutline");
+            matIconOutlineDark = CreateStatusMaterial(shader, new Color(0.15f, 0.15f, 0.17f), "Mat_IconOutlineDark");
 
             matRoadAsphalt = CreateStatusMaterial(shader, new Color(0.12f, 0.13f, 0.16f), "Mat_RoadAsphalt");
             matH3Boundary = CreateStatusMaterial(shader, new Color(0.0f, 0.85f, 1.0f, 0.7f), "Mat_H3Boundary");
@@ -310,10 +305,7 @@ namespace Fetex
             if (litShader == null) litShader = Shader.Find("Universal Render Pipeline/Lit");
             if (litShader == null) litShader = shader;
 
-            matBuildingGlass = CreateStatusMaterial(litShader, new Color(0.12f, 0.24f, 0.38f), "Mat_BuildingGlass");
-            matBuildingConcrete = CreateStatusMaterial(litShader, new Color(0.68f, 0.70f, 0.72f), "Mat_BuildingConcrete");
-            matBuildingDark = CreateStatusMaterial(litShader, new Color(0.18f, 0.19f, 0.22f), "Mat_BuildingDark");
-            matBuildingSteel = CreateStatusMaterial(litShader, new Color(0.35f, 0.40f, 0.46f), "Mat_BuildingSteel");
+            // cityAssets가 없을 때만 쓰는 대체 지면 머티리얼
             matGroundCity = CreateStatusMaterial(litShader, new Color(0.08f, 0.09f, 0.10f), "Mat_GroundCity");
         }
 
@@ -402,7 +394,9 @@ namespace Fetex
             isLoaded = true;
             isPlaying = autoPlayOnStart;
 
-            activeTaxiIndices.Clear();
+            taxiEntities.Clear();
+            onRoadTaxis.Clear();
+            selectedEntity = -1;
             if (replayData.entities != null)
             {
                 for (int i = 0; i < replayData.entities.Count; i++)
@@ -411,7 +405,7 @@ namespace Fetex
                     string id = replayData.entities[i].id;
                     if ((k != null && k.ToLower().Contains("taxi")) || (id != null && id.ToLower().Contains("taxi")))
                     {
-                        activeTaxiIndices.Add(i);
+                        taxiEntities.Add(i);
                     }
                 }
             }
@@ -520,94 +514,14 @@ namespace Fetex
             if (map == null || map.roads == null) return;
 
             if (roadNetworkObject != null) Destroy(roadNetworkObject);
-            foreach (var cellObj in h3CellObjects) if (cellObj != null) Destroy(cellObj);
+            if (buildingsContainerObject != null) Destroy(buildingsContainerObject);
             h3CellObjects.Clear();
 
-            roadNetworkObject = new GameObject("[GangnamRoadNetwork]");
-            roadNetworkObject.transform.SetParent(transform, false);
-
-            MeshFilter mf = roadNetworkObject.AddComponent<MeshFilter>();
-            MeshRenderer mr = roadNetworkObject.AddComponent<MeshRenderer>();
-            mr.sharedMaterial = matRoadAsphalt;
-
-            Mesh mesh = new Mesh();
-            mesh.name = "GangnamRoadsMesh";
-            mesh.indexFormat = IndexFormat.UInt32;
-
-            List<Vector3> vertices = new List<Vector3>();
-            List<int> triangles = new List<int>();
-
-            for (int r = 0; r < map.roads.Count; r++)
-            {
-                RoadData road = map.roads[r];
-                if (road.points == null || road.points.Count < 2) continue;
-
-                float halfWidth = road.width > 0.5f ? road.width * 0.5f : 1.6f;
-
-                for (int p = 0; p < road.points.Count - 1; p++)
-                {
-                    Vector3 p0 = new Vector3(road.points[p].x, groundY + 0.01f, road.points[p].z);
-                    Vector3 p1 = new Vector3(road.points[p + 1].x, groundY + 0.01f, road.points[p + 1].z);
-
-                    Vector3 dir = (p1 - p0).normalized;
-                    if (dir.sqrMagnitude < 0.001f) continue;
-
-                    Vector3 normal = new Vector3(-dir.z, 0f, dir.x) * halfWidth;
-
-                    int baseIdx = vertices.Count;
-                    vertices.Add(p0 - normal);
-                    vertices.Add(p0 + normal);
-                    vertices.Add(p1 - normal);
-                    vertices.Add(p1 + normal);
-
-                    triangles.Add(baseIdx + 0);
-                    triangles.Add(baseIdx + 1);
-                    triangles.Add(baseIdx + 2);
-
-                    triangles.Add(baseIdx + 2);
-                    triangles.Add(baseIdx + 1);
-                    triangles.Add(baseIdx + 3);
-                }
-            }
-
-            if (map.junctions != null)
-            {
-                for (int j = 0; j < map.junctions.Count; j++)
-                {
-                    JunctionData junc = map.junctions[j];
-                    if (junc.points == null || junc.points.Count < 3) continue;
-
-                    Vector3 centroid = Vector3.zero;
-                    for (int p = 0; p < junc.points.Count; p++)
-                    {
-                        centroid += new Vector3(junc.points[p].x, groundY + 0.01f, junc.points[p].z);
-                    }
-                    centroid /= junc.points.Count;
-
-                    int centerIdx = vertices.Count;
-                    vertices.Add(centroid);
-
-                    int startPointIdx = vertices.Count;
-                    for (int p = 0; p < junc.points.Count; p++)
-                    {
-                        vertices.Add(new Vector3(junc.points[p].x, groundY + 0.01f, junc.points[p].z));
-                    }
-
-                    for (int p = 0; p < junc.points.Count; p++)
-                    {
-                        int nextP = (p + 1) % junc.points.Count;
-                        triangles.Add(centerIdx);
-                        triangles.Add(startPointIdx + p);
-                        triangles.Add(startPointIdx + nextP);
-                    }
-                }
-            }
-
-            mesh.SetVertices(vertices);
-            mesh.SetTriangles(triangles, 0);
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
-            mf.sharedMesh = mesh;
+            // 도로·도색·보도·신호등·가로등 → roadNetworkObject, 지면·건물·가로수 → buildingsContainerObject
+            var builder = new GangnamCityBuilder(map, cityAssets, groundY, matRoadAsphalt, matGroundCity);
+            builder.Build(transform);
+            roadNetworkObject = builder.RoadRoot;
+            buildingsContainerObject = builder.CityRoot;
 
             if (map.cells != null)
             {
@@ -629,7 +543,7 @@ namespace Fetex
 
                     for (int p = 0; p < cell.points.Count; p++)
                     {
-                        lr.SetPosition(p, new Vector3(cell.points[p].x, groundY + 0.08f, cell.points[p].z));
+                        lr.SetPosition(p, new Vector3(cell.points[p].x, groundY + 0.3f, cell.points[p].z));
                     }
 
                     h3CellObjects.Add(cellObj);
@@ -637,175 +551,21 @@ namespace Fetex
             }
 
             roadNetworkObject.SetActive(showGangnamRoadNetwork);
+            buildingsContainerObject.SetActive(showGangnamBuildings);
             UpdateH3Visibility();
-            BuildGangnamBuildings(map);
         }
+
+        // H3 경계선은 탑뷰 분석용이라 추적 시점(지상 높이)에서는 시야를 가리므로 숨긴다
+        private bool H3ShouldShow => showH3Cells && (cameraView == null || cameraView.overview);
+        private bool h3Shown;
 
         private void UpdateH3Visibility()
         {
+            h3Shown = H3ShouldShow;
             foreach (var cellObj in h3CellObjects)
             {
-                if (cellObj != null) cellObj.SetActive(showH3Cells);
+                if (cellObj != null) cellObj.SetActive(h3Shown);
             }
-        }
-
-        private void BuildGangnamBuildings(MapData map)
-        {
-            if (map == null || map.roads == null) return;
-
-            if (buildingsContainerObject != null) Destroy(buildingsContainerObject);
-            buildingsContainerObject = new GameObject("[GangnamBuildings]");
-            buildingsContainerObject.transform.SetParent(transform, false);
-
-            GameObject groundObj = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            groundObj.name = "CityGroundPlane";
-            groundObj.transform.SetParent(buildingsContainerObject.transform, false);
-            groundObj.transform.position = new Vector3(0f, groundY - 0.02f, 0f);
-            groundObj.transform.localScale = new Vector3(250f, 1f, 250f);
-            Destroy(groundObj.GetComponent<Collider>());
-            if (groundObj.TryGetComponent<Renderer>(out var groundRend) && matGroundCity != null)
-            {
-                groundRend.sharedMaterial = matGroundCity;
-            }
-
-            float bucketSize = 40f;
-            Dictionary<long, List<Vector2>> spatialBuckets = new Dictionary<long, List<Vector2>>();
-
-            void AddPoint(float px, float pz)
-            {
-                int bx = Mathf.FloorToInt(px / bucketSize);
-                int bz = Mathf.FloorToInt(pz / bucketSize);
-                long key = (((long)bx) << 32) ^ (uint)bz;
-                if (!spatialBuckets.TryGetValue(key, out var list))
-                {
-                    list = new List<Vector2>();
-                    spatialBuckets[key] = list;
-                }
-                list.Add(new Vector2(px, pz));
-            }
-
-            float minX = float.MaxValue, maxX = float.MinValue;
-            float minZ = float.MaxValue, maxZ = float.MinValue;
-
-            for (int r = 0; r < map.roads.Count; r++)
-            {
-                var rd = map.roads[r];
-                if (rd.points == null || rd.points.Count < 2) continue;
-                for (int p = 0; p < rd.points.Count - 1; p++)
-                {
-                    Vector2 p0 = new Vector2(rd.points[p].x, rd.points[p].z);
-                    Vector2 p1 = new Vector2(rd.points[p + 1].x, rd.points[p + 1].z);
-
-                    minX = Mathf.Min(minX, Mathf.Min(p0.x, p1.x));
-                    maxX = Mathf.Max(maxX, Mathf.Max(p0.x, p1.x));
-                    minZ = Mathf.Min(minZ, Mathf.Min(p0.y, p1.y));
-                    maxZ = Mathf.Max(maxZ, Mathf.Max(p0.y, p1.y));
-
-                    float dist = Vector2.Distance(p0, p1);
-                    int steps = Mathf.Max(1, Mathf.CeilToInt(dist / 10f));
-                    for (int s = 0; s <= steps; s++)
-                    {
-                        Vector2 pt = Vector2.Lerp(p0, p1, (float)s / steps);
-                        AddPoint(pt.x, pt.y);
-                    }
-                }
-            }
-
-            if (map.junctions != null)
-            {
-                for (int j = 0; j < map.junctions.Count; j++)
-                {
-                    var junc = map.junctions[j];
-                    if (junc.points == null) continue;
-                    for (int p = 0; p < junc.points.Count; p++)
-                    {
-                        AddPoint(junc.points[p].x, junc.points[p].z);
-                    }
-                }
-            }
-
-            bool IsNearRoad(float cx, float cz, float radius)
-            {
-                float sqrRadius = radius * radius;
-                int minBx = Mathf.FloorToInt((cx - radius) / bucketSize);
-                int maxBx = Mathf.FloorToInt((cx + radius) / bucketSize);
-                int minBz = Mathf.FloorToInt((cz - radius) / bucketSize);
-                int maxBz = Mathf.FloorToInt((cz + radius) / bucketSize);
-
-                for (int bx = minBx; bx <= maxBx; bx++)
-                {
-                    for (int bz = minBz; bz <= maxBz; bz++)
-                    {
-                        long key = (((long)bx) << 32) ^ (uint)bz;
-                        if (spatialBuckets.TryGetValue(key, out var list))
-                        {
-                            for (int i = 0; i < list.Count; i++)
-                            {
-                                float dx = cx - list[i].x;
-                                float dz = cz - list[i].y;
-                                if ((dx * dx + dz * dz) < sqrRadius) return true;
-                            }
-                        }
-                    }
-                }
-                return false;
-            }
-
-            float stepSize = 35f;
-            float clearance = 16f;
-            int count = 0;
-
-            UnityEngine.Random.InitState(42);
-
-            Material[] bldgMats = new Material[] { matBuildingGlass, matBuildingConcrete, matBuildingDark, matBuildingSteel };
-
-            for (float x = minX + 15f; x <= maxX - 15f; x += stepSize)
-            {
-                for (float z = minZ + 15f; z <= maxZ - 15f; z += stepSize)
-                {
-                    float jx = x + UnityEngine.Random.Range(-5f, 5f);
-                    float jz = z + UnityEngine.Random.Range(-5f, 5f);
-
-                    if (IsNearRoad(jx, jz, clearance)) continue;
-
-                    float distFromCenter = Mathf.Sqrt(jx * jx + jz * jz);
-                    float baseHeight = distFromCenter < 350f ? UnityEngine.Random.Range(55f, 130f) : UnityEngine.Random.Range(20f, 65f);
-
-                    float bWidth = UnityEngine.Random.Range(18f, 28f);
-                    float bDepth = UnityEngine.Random.Range(18f, 28f);
-
-                    GameObject bldg = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    bldg.name = $"Building_{count}";
-                    bldg.transform.SetParent(buildingsContainerObject.transform, false);
-                    bldg.transform.position = new Vector3(jx, groundY + (baseHeight * 0.5f), jz);
-                    bldg.transform.localScale = new Vector3(bWidth, baseHeight, bDepth);
-                    Destroy(bldg.GetComponent<Collider>());
-
-                    if (bldg.TryGetComponent<Renderer>(out var rend))
-                    {
-                        rend.sharedMaterial = bldgMats[UnityEngine.Random.Range(0, bldgMats.Length)];
-                    }
-
-                    if (baseHeight > 60f && UnityEngine.Random.value > 0.35f)
-                    {
-                        GameObject roof = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                        roof.name = "RoofStructure";
-                        roof.transform.SetParent(bldg.transform, false);
-                        roof.transform.localPosition = new Vector3(0f, 0.5f + (3.5f / baseHeight), 0f);
-                        roof.transform.localScale = new Vector3(0.55f, 7f / baseHeight, 0.55f);
-                        Destroy(roof.GetComponent<Collider>());
-                        if (roof.TryGetComponent<Renderer>(out var rRend))
-                        {
-                            rRend.sharedMaterial = matBuildingDark;
-                        }
-                    }
-
-                    count++;
-                }
-            }
-
-            buildingsContainerObject.SetActive(showGangnamBuildings);
-            Debug.Log($"[FetexReplayPlayer] 강남 3D 빌딩숲 {count}개 자동 생성 완료!");
         }
 
         private void ApplyCityVisibility()
@@ -817,30 +577,11 @@ namespace Fetex
             }
         }
 
-        public void SetGangnamOverviewCamera()
-        {
-            if (cameraView != null)
-            {
-                cameraView.mapCenter = Vector3.zero;
-                cameraView.overviewSize = 850f;
-                cameraView.overview = true;
-                cameraView.ApplyView();
-            }
-        }
-
-        public void SetIntersectionCamera()
-        {
-            if (cameraView != null)
-            {
-                cameraView.mapCenter = Vector3.zero;
-                cameraView.overviewSize = 250f;
-                cameraView.overview = true;
-                cameraView.ApplyView();
-            }
-        }
-
         private void Update()
         {
+            if (h3Shown != H3ShouldShow) UpdateH3Visibility();   // 탑뷰/추적뷰 전환 감지
+            bool wantIcons = cameraView == null || cameraView.overview;
+            if (wantIcons != iconMode) SetIconMode(wantIcons);
             if (!isLoaded || replayData == null || replayData.frames.Count == 0) return;
 
             if (isPlaying)
@@ -879,6 +620,8 @@ namespace Fetex
             }
 
             activeInCurrentFrame.Clear();
+            onRoadTaxis.Clear();
+            System.Array.Clear(stateCounts, 0, stateCounts.Length);
             bool lanePath = UseLanePath;
 
             if (fA.vehicles != null)
@@ -887,6 +630,7 @@ namespace Fetex
                 {
                     VehicleState vA = fA.vehicles[i];
                     activeInCurrentFrame.Add(vA.i);
+                    if (taxiEntities.Contains(vA.i)) onRoadTaxis.Add(vA.i);
 
                     float px = vA.x, pz = vA.z, heading = vA.a;
                     int finalState = vA.s;
@@ -907,12 +651,18 @@ namespace Fetex
                         }
                         finalState = factor >= 0.5f ? vB.s : vA.s;
                     }
+                    else if (lanePath)
+                    {
+                        // 다음 프레임이 없음(곧 사라짐/마지막 프레임): 기록 위치 대신 차선 위로
+                        ReplayMotion.Place(motionLanes, ToMotionState(vA), EntityLength(vA.i), out px, out pz, out heading);
+                    }
 
                     GameObject vObj = GetOrCreateVehicle(vA.i);
                     vObj.transform.SetPositionAndRotation(new Vector3(px, groundY, pz), Quaternion.Euler(0f, heading, 0f));
                     if (!vObj.activeSelf) vObj.SetActive(true);
 
                     UpdateStatusMarker(vA.i, finalState);
+                    if (finalState >= 0 && finalState < stateCounts.Length) stateCounts[finalState]++;
                 }
             }
 
@@ -925,6 +675,13 @@ namespace Fetex
             }
 
             UpdatePeople(fA.people);
+
+            // 추적 중인 택시가 운행을 마치고 사라지면 다음 운행 택시로 넘어간다
+            onRoadTaxis.Sort();
+            if (selectedEntity >= 0 && onRoadTaxis.Count > 0 && !activeInCurrentFrame.Contains(selectedEntity))
+            {
+                SelectTaxiForCamera(0);
+            }
         }
 
         private GameObject GetOrCreateVehicle(int entityIndex)
@@ -984,6 +741,20 @@ namespace Fetex
             vehicleInstances[entityIndex] = instance;
             statusMarkers[entityIndex] = markerRenderer;
 
+            // 탑뷰 아이콘: 택시·자율주행차는 진행 방향 핀, 일반 차량은 작은 원, 장애물은 마름모
+            string k = kind.ToLower();
+            bool isTaxi = k.Contains("taxi") || id.ToLower().Contains("taxi");
+            bool bigPin = isTaxi || k.Contains("auto");
+            Mesh shape = bigPin ? TopViewIcons.Pin : (prefabToUse == obstaclePrefab ? TopViewIcons.Diamond : TopViewIcons.Disc);
+            Renderer fill = TopViewIcons.Create(instance.transform, shape, isTaxi ? matIdle : matCivilian,
+                                                bigPin ? matIconOutline : matIconOutlineDark, out Transform iconRoot);
+            iconFills[entityIndex] = fill;
+            iconRoots[entityIndex] = iconRoot;
+            iconPx[entityIndex] = bigPin ? taxiIconPx : otherVehicleIconPx;
+            iconRoot.gameObject.SetActive(iconMode);
+            marker.SetActive(!iconMode);
+            iconScaleDirty = true;
+
             return instance;
         }
 
@@ -997,22 +768,60 @@ namespace Fetex
             }
 
             lastVehicleStates[entityIndex] = state;
+            Material mat = StateMaterial(state);
+            renderer.sharedMaterial = mat;
+            if (iconFills.TryGetValue(entityIndex, out Renderer fill)) fill.sharedMaterial = mat;
+        }
+
+        private Material StateMaterial(int state)
+        {
             switch (state)
             {
-                case 0: renderer.sharedMaterial = matIdle; break;
-                case 1: renderer.sharedMaterial = matPickup; break;
-                case 2: renderer.sharedMaterial = matOccupied; break;
-                case 3: renderer.sharedMaterial = matReposition; break;
-                case 4: renderer.sharedMaterial = matCivilian; break;
-                case 5: renderer.sharedMaterial = matAuto; break;
-                case 6: renderer.sharedMaterial = matObstacle; break;
-                default: renderer.sharedMaterial = matIdle; break;
+                case 0: return matIdle;
+                case 1: return matPickup;
+                case 2: return matOccupied;
+                case 3: return matReposition;
+                case 4: return matCivilian;
+                case 5: return matAuto;
+                case 6: return matObstacle;
+                default: return matIdle;
             }
+        }
+
+        private void SetIconMode(bool overview)
+        {
+            iconMode = overview;
+            foreach (var kv in iconRoots) if (kv.Value != null) kv.Value.gameObject.SetActive(overview);
+            foreach (var kv in statusMarkers) if (kv.Value != null) kv.Value.gameObject.SetActive(!overview);
+            foreach (var t in personIcons) if (t != null) t.gameObject.SetActive(overview);
+            iconScaleDirty = true;
+        }
+
+        // 카메라 확대율이 바뀌면 아이콘을 화면상 일정한 크기로 다시 맞춘다 (실제 차보다 작아지지는 않게)
+        private void LateUpdate()
+        {
+            if (!iconMode || cameraView == null) return;
+            float ortho = cameraView.overviewSize;
+            if (!iconScaleDirty && Mathf.Approximately(ortho, lastIconOrtho) && Screen.height == lastIconScreenH) return;
+            lastIconOrtho = ortho;
+            lastIconScreenH = Screen.height;
+            iconScaleDirty = false;
+
+            float metersPerPx = 2f * ortho / Mathf.Max(1, Screen.height);
+            foreach (var kv in iconRoots)
+            {
+                if (kv.Value == null) continue;
+                float px = kv.Key == selectedEntity ? selectedTaxiIconPx : iconPx[kv.Key];
+                TopViewIcons.SetWorldRadius(kv.Value, Mathf.Max(px * metersPerPx, 2.4f));
+            }
+            float personR = Mathf.Max(personIconPx * metersPerPx, 0.8f);
+            foreach (var t in personIcons) if (t != null) TopViewIcons.SetWorldRadius(t, personR);
         }
 
         private void UpdatePeople(List<PersonPos> people)
         {
             int targetCount = people != null ? people.Count : 0;
+            waitingPeople = targetCount;
 
             while (personPool.Count < targetCount)
             {
@@ -1022,6 +831,10 @@ namespace Fetex
                 pin.transform.localScale = new Vector3(0.6f, 1.0f, 0.6f);
                 Destroy(pin.GetComponent<Collider>());
                 pin.GetComponent<Renderer>().sharedMaterial = matPerson;
+                TopViewIcons.Create(pin.transform, TopViewIcons.Diamond, matPerson, matIconOutline, out Transform icon);
+                icon.gameObject.SetActive(iconMode);
+                personIcons.Add(icon);
+                iconScaleDirty = true;
                 personPool.Add(pin);
             }
 
@@ -1040,10 +853,25 @@ namespace Fetex
 
         public void SelectTaxiForCamera(int delta)
         {
-            if (activeTaxiIndices.Count == 0) return;
+            // 지금 도로 위에 있는 택시들 사이에서만 이동한다
+            int n = onRoadTaxis.Count;
+            if (n == 0) return;
 
-            currentFollowTaxiIndex = (currentFollowTaxiIndex + delta + activeTaxiIndices.Count) % activeTaxiIndices.Count;
-            int taxiEntityId = activeTaxiIndices[currentFollowTaxiIndex];
+            int idx = onRoadTaxis.IndexOf(selectedEntity);
+            if (idx >= 0)
+            {
+                idx = ((idx + delta) % n + n) % n;
+            }
+            else
+            {
+                // 고르던 택시가 사라졌으면 번호상 바로 다음 운행 택시부터
+                int next = onRoadTaxis.FindIndex(e => e > selectedEntity);
+                if (next < 0) next = 0;
+                idx = delta < 0 ? ((next - 1) % n + n) % n : next;
+            }
+            int taxiEntityId = onRoadTaxis[idx];
+            selectedEntity = taxiEntityId;
+            iconScaleDirty = true;
 
             if (vehicleInstances.TryGetValue(taxiEntityId, out GameObject taxiObj))
             {
@@ -1068,6 +896,10 @@ namespace Fetex
             vehicleInstances.Clear();
             statusMarkers.Clear();
             lastVehicleStates.Clear();
+            iconFills.Clear();
+            iconRoots.Clear();
+            iconPx.Clear();
+            personIcons.Clear();
 
             foreach (var p in personPool)
             {
@@ -1084,213 +916,80 @@ namespace Fetex
             return replayData.frames[FindFrameIndex(currentTime)];
         }
 
-        private void InitStyles()
+        // =====================================================================
+        // HUD(FetexHud)용 API
+        // =====================================================================
+        public float Duration => replayData != null ? replayData.duration : 0f;
+        public int WaitingPeople => waitingPeople;
+        public int StateCount(int state) => state >= 0 && state < stateCounts.Length ? stateCounts[state] : 0;
+
+        /// <summary>리플레이 시작 시각 기준 t초의 시계 문자열.</summary>
+        public string ClockAt(float t, bool withSeconds)
         {
-            if (isStyleInitialized) return;
-            isStyleInitialized = true;
-
-            headerStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 14,
-                fontStyle = FontStyle.Bold,
-                normal = { textColor = Color.white }
-            };
-
-            boldStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 12,
-                fontStyle = FontStyle.Bold,
-                normal = { textColor = new Color(0.9f, 0.95f, 1.0f) }
-            };
-
-            statusStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 11,
-                normal = { textColor = Color.yellow }
-            };
+            int start = replayData != null ? replayData.startHour * 3600 : 0;
+            float total = start + t;
+            int h = Mathf.FloorToInt(total / 3600f) % 24;
+            int m = Mathf.FloorToInt(total % 3600f / 60f);
+            if (!withSeconds) return $"{h:D2}:{m:D2}";
+            return $"{h:D2}:{m:D2}:{Mathf.FloorToInt(total % 60f):D2}";
         }
 
-        private void OnGUI()
+        /// <summary>현재 프레임의 서비스 지표. v1 파일은 최종 지표와 맞도록 비율 보정.</summary>
+        public void GetServiceKpis(out int requested, out int picked, out float avgWait, out int waiting, out int moves, out int timedOut)
         {
-            InitStyles();
-
-            // -------------------------------------------------------------
-            // A. Top-Right KPI Dashboard
-            // -------------------------------------------------------------
-            float dashWidth = 350f;
-            float dashHeight = 440f;
-            Rect dashRect = new Rect(Screen.width - dashWidth - 18, 18, dashWidth, dashHeight);
-            GUILayout.BeginArea(dashRect, GUI.skin.box);
-
-            GUILayout.Label("<b>AI MOBILITY REPLAY DASHBOARD</b>", headerStyle);
-            GUILayout.Space(4);
-
-            // Strategy Switcher Buttons
-            GUILayout.BeginHorizontal();
-            GUI.color = replayFileName == "rl_prepositioned.json" ? new Color(0.3f, 0.9f, 1f) : Color.white;
-            if (GUILayout.Button("RL 선제재배치 (AI)"))
-            {
-                LoadMapAndReplay("rl_prepositioned.json");
-            }
-            GUI.color = replayFileName == "prepositioned.json" ? new Color(0.3f, 0.9f, 1f) : Color.white;
-            if (GUILayout.Button("정적 선제배치"))
-            {
-                LoadMapAndReplay("prepositioned.json");
-            }
-            GUI.color = replayFileName == "patrol.json" ? new Color(0.3f, 0.9f, 1f) : Color.white;
-            if (GUILayout.Button("일반 순찰 (Baseline)"))
-            {
-                LoadMapAndReplay("patrol.json");
-            }
-            GUI.color = Color.white;
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(4);
-            GUILayout.Label($"전략: <b>{CurrentStrategyName}</b>", boldStyle);
-            GUILayout.Label($"시뮬레이션 시각: <color=#00FFAA><b>{CurrentClockString}</b></color> (진행 {currentTime:F0}s / {replayData?.duration ?? 0:F0}s)", statusStyle);
-            GUILayout.Space(4);
-
             FrameData cur = GetCurrentFrameData();
-            if (cur != null)
+            requested = picked = waiting = moves = timedOut = 0;
+            avgWait = 0f;
+            if (cur == null) return;
+            requested = cur.requested;
+            picked = cur.picked;
+            avgWait = cur.avgWait;
+            waiting = cur.waiting;
+            moves = cur.moves;
+            timedOut = cur.timedOut;
+
+            // v1 파일은 프레임 집계와 최종 지표가 어긋나 비율로 보정했었다. v2는 기록 단계에서
+            // 같은 기준(타임아웃 승객 제외)으로 집계하므로 원래 값을 그대로 보여준다.
+            if (replayData.version < 2 && replayData.metrics != null && replayData.metrics.n_measured > 0)
             {
-                int displayPicked = cur.picked;
-                float displayAvgWait = cur.avgWait;
-
-                // v1 파일은 프레임 집계와 최종 지표가 어긋나 비율로 보정했었다. v2는 기록 단계에서
-                // 같은 기준(타임아웃 승객 제외)으로 집계하므로 원래 값을 그대로 보여준다.
-                if (replayData != null && replayData.version < 2 && replayData.metrics != null && replayData.metrics.n_measured > 0 && replayData.frames != null && replayData.frames.Count > 0)
-                {
-                    FrameData lastFrame = replayData.frames[replayData.frames.Count - 1];
-                    float pickRatio = lastFrame.picked > 0 ? (float)replayData.metrics.n_measured / lastFrame.picked : 1f;
-                    float waitRatio = lastFrame.avgWait > 0 ? (float)replayData.metrics.avg_wait_sec / lastFrame.avgWait : 1f;
-
-                    displayPicked = Mathf.RoundToInt(cur.picked * pickRatio);
-                    displayAvgWait = cur.avgWait * waitRatio;
-                }
-
-                float fulfillRate = cur.requested > 0 ? ((float)displayPicked / cur.requested * 100f) : 100f;
-
-                GUILayout.Label($"• 누적 승객 호출: <b>{cur.requested}</b> 건");
-                GUILayout.Label($"• 탑승 완료: <b>{displayPicked}</b> 명  (이행률: <color=#66FF66><b>{fulfillRate:F1}%</b></color>)");
-                GUILayout.Label($"• 현재 대기 승객: <color=#FFAA00><b>{cur.waiting}</b></color> 명");
-                GUILayout.Label($"• 평균 대기 시간: <color=#FFDD44><b>{displayAvgWait:F1}</b></color> 초");
-                GUILayout.Label($"• AI 선제 재배치 누적 이동: <color=#00CCFF><b>{cur.moves}</b></color> 건");
-                GUILayout.Label($"• 호출 취소/타임아웃: <color=#FF6666><b>{cur.timedOut}</b></color> 명");
+                FrameData last = replayData.frames[replayData.frames.Count - 1];
+                float pickRatio = last.picked > 0 ? (float)replayData.metrics.n_measured / last.picked : 1f;
+                float waitRatio = last.avgWait > 0 ? replayData.metrics.avg_wait_sec / last.avgWait : 1f;
+                picked = Mathf.RoundToInt(cur.picked * pickRatio);
+                avgWait = cur.avgWait * waitRatio;
             }
+        }
 
-            if (replayData != null && replayData.metrics != null && replayData.version >= 2)
-            {
-                MetricsData m = replayData.metrics;
-                string fp = string.IsNullOrEmpty(replayData.fingerprint) ? "-" : replayData.fingerprint;
-                GUILayout.Label($"• 수요: <b>{(m.demand_source == "real" ? "TIMS 실측 보정" : "가정값")}</b>  지문 <b>{fp}</b>");
-                if (m.service_rate > 0f)
-                {
-                    GUILayout.Label($"• 최종 서비스율 <b>{m.service_rate * 100f:F1}%</b> · 추정 매출 <b>{m.est_revenue_won / 1e6f:F1}</b>백만원");
-                }
-            }
+        public void Seek(float time)
+        {
+            if (replayData == null) return;
+            currentTime = Mathf.Clamp(time, 0f, replayData.duration);
+            UpdateSimulation(currentTime);
+        }
 
-            GUILayout.Space(4);
-            GUILayout.Label("<b>상태 범례:</b> 🟢대기 | 🟡픽업 | 🔴탑승 | <color=#00CCFF>🔵AI재배치</color>");
-            GUILayout.Space(6);
+        public void SetH3Visible(bool visible)
+        {
+            showH3Cells = visible;
+            UpdateH3Visibility();
+        }
 
-            // View & Map Controls
-            GUILayout.Label("<b>🗺️ 강남역 지도 및 뷰 제어</b>", boldStyle);
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("강남역 전체 뷰")) SetGangnamOverviewCamera();
-            if (GUILayout.Button("사거리 확대 뷰")) SetIntersectionCamera();
-            GUILayout.EndHorizontal();
+        public void SetBuildingsVisible(bool visible)
+        {
+            showGangnamBuildings = visible;
+            if (buildingsContainerObject != null) buildingsContainerObject.SetActive(visible);
+        }
 
-            bool prevRoad = showGangnamRoadNetwork;
-            showGangnamRoadNetwork = GUILayout.Toggle(showGangnamRoadNetwork, "실제 강남역 도로망 3D 표시");
-            if (prevRoad != showGangnamRoadNetwork && roadNetworkObject != null)
-            {
-                roadNetworkObject.SetActive(showGangnamRoadNetwork);
-            }
-
-            bool prevH3 = showH3Cells;
-            showH3Cells = GUILayout.Toggle(showH3Cells, "H3 육각형 공간 인덱싱 격자 표시");
-            if (prevH3 != showH3Cells)
-            {
-                UpdateH3Visibility();
-            }
-
-            bool prevBldg = showGangnamBuildings;
-            showGangnamBuildings = GUILayout.Toggle(showGangnamBuildings, "🏢 실제 강남 3D 빌딩숲 표시");
-            if (prevBldg != showGangnamBuildings && buildingsContainerObject != null)
-            {
-                buildingsContainerObject.SetActive(showGangnamBuildings);
-            }
-
-            bool prevHideCity = hideSample3x3City;
-            hideSample3x3City = GUILayout.Toggle(hideSample3x3City, "가상 3x3 샘플 빌딩 숨기기 (권장)");
-            if (prevHideCity != hideSample3x3City)
-            {
-                ApplyCityVisibility();
-            }
-
-            GUILayout.EndArea();
-
-            // -------------------------------------------------------------
-            // B. Bottom Playback Control Bar
-            // -------------------------------------------------------------
-            float barWidth = Screen.width - 36;
-            float barHeight = 70f;
-            Rect barRect = new Rect(18, Screen.height - barHeight - 16, barWidth, barHeight);
-            GUILayout.BeginArea(barRect, GUI.skin.box);
-
-            GUILayout.BeginHorizontal();
-
-            // Play / Pause
-            GUI.color = isPlaying ? new Color(1f, 0.8f, 0.4f) : new Color(0.4f, 1f, 0.5f);
-            if (GUILayout.Button(isPlaying ? "❚❚ 일시정지" : "▶ 재생", GUILayout.Width(90), GUILayout.Height(26)))
-            {
-                isPlaying = !isPlaying;
-            }
-            GUI.color = Color.white;
-
-            // Speed Controls
-            GUILayout.Label("  배속:", GUILayout.Width(38));
-            float[] speeds = { 1f, 2f, 5f, 10f, 25f, 50f };
-            foreach (var s in speeds)
-            {
-                GUI.color = Mathf.Approximately(playbackSpeed, s) ? new Color(0.3f, 0.9f, 1f) : Color.white;
-                if (GUILayout.Button($"{s}x", GUILayout.Width(42), GUILayout.Height(24)))
-                {
-                    playbackSpeed = s;
-                }
-            }
-            GUI.color = Color.white;
-
-            // Follow Taxi Selector
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("◀ 이전 택시", GUILayout.Width(85), GUILayout.Height(24)))
-            {
-                SelectTaxiForCamera(-1);
-            }
-            string taxiLabel = activeTaxiIndices.Count > 0 ? $"택시 #{currentFollowTaxiIndex + 1}/{activeTaxiIndices.Count}" : "택시 없음";
-            GUILayout.Label(taxiLabel, GUILayout.Width(90));
-            if (GUILayout.Button("다음 택시 ▶", GUILayout.Width(85), GUILayout.Height(24)))
-            {
-                SelectTaxiForCamera(1);
-            }
-
-            GUILayout.EndHorizontal();
-
-            // Timeline Scrubbing Slider
-            GUILayout.Space(2);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("타임라인", GUILayout.Width(60));
-            float maxDuration = replayData != null && replayData.duration > 0 ? replayData.duration : 100f;
-            float newTime = GUILayout.HorizontalSlider(currentTime, 0f, maxDuration);
-            if (Mathf.Abs(newTime - currentTime) > 0.05f)
-            {
-                currentTime = newTime;
-                UpdateSimulation(currentTime);
-            }
-            GUILayout.Label($"{currentTime:F0}s / {maxDuration:F0}s", GUILayout.Width(110));
-            GUILayout.EndHorizontal();
-
-            GUILayout.EndArea();
+        /// <summary>추적 중인 택시: 이름, 운행 중 택시 가운데 순번/운행 대수, 현재 상태.</summary>
+        public bool TryGetFollowedTaxi(out string taxiId, out int index, out int count, out int state)
+        {
+            taxiId = null;
+            index = onRoadTaxis.IndexOf(selectedEntity);
+            count = onRoadTaxis.Count;
+            state = -1;
+            if (selectedEntity < 0 || index < 0) return false;
+            taxiId = replayData != null && selectedEntity < replayData.entities.Count ? replayData.entities[selectedEntity].id : null;
+            if (lastVehicleStates.TryGetValue(selectedEntity, out int st)) state = st;
+            return true;
         }
 
         private void OnDestroy()

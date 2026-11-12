@@ -100,6 +100,10 @@ namespace Fetex
         public const float HeadingProbe = 1.5f;
         public const float TeleportSlack = 30f;
         public const float MaxEndpointOffset = 8f;
+        // SUMO 갓길 정차는 차를 차선 폭(3.2m)만큼 오른쪽으로 옮겨 기록한다 → Unity에선 보도 위에 올라간다.
+        // 기록 위치와의 차이 중 옆 방향 성분은 이 값까지만 반영해 차선 가장자리에 붙어 서게 한다
+        // (차선 반폭 1.6m - 차 반폭 약 0.9m).
+        public const float MaxLateralOffset = 0.7f;
         const int MaxSegments = 64;
 
         struct Segment
@@ -251,12 +255,16 @@ namespace Fetex
             float c = d - half;
             PathPoint(lanes, k, c, out x, out z);
 
-            // 끝점 보정: 기록된 차 중심(갓길 정차로 옆에 비켜선 위치 등)과 경로상 위치의 차이를
-            // 양 끝에서 0이 되도록 선형으로 나눠 더한다 → 프레임 시점에는 기록 위치와 정확히 일치.
+            // 끝점 보정: 각 프레임의 표시 위치(DisplayPoint)와 경로상 위치의 차이를 양 끝에서 0이 되도록
+            // 선형으로 나눠 더한다 → 프레임 시점에는 표시 위치와 정확히 일치.
+            // 표시 위치는 경로와 무관하게 그 프레임 상태만으로 정해지므로, 앞 구간의 끝(f=1)과
+            // 다음 구간의 시작(f=0)이 항상 같은 점이 된다 (차선 변경 도중이어도 튀지 않음).
             PathPoint(lanes, k, -half, out float ax0, out float az0);
             PathPoint(lanes, k, D - half, out float bx1, out float bz1);
-            float oax = a.X - ax0, oaz = a.Z - az0;
-            float obx = b.X - bx1, obz = b.Z - bz1;
+            DisplayPoint(lanes, a, half, out float pax, out float paz);
+            DisplayPoint(lanes, b, half, out float pbx, out float pbz);
+            float oax = pax - ax0, oaz = paz - az0;
+            float obx = pbx - bx1, obz = pbz - bz1;
             if (oax * oax + oaz * oaz > MaxEndpointOffset * MaxEndpointOffset) { oax = 0f; oaz = 0f; }
             if (obx * obx + obz * obz > MaxEndpointOffset * MaxEndpointOffset) { obx = 0f; obz = 0f; }
             x += oax * (1f - f) + obx * f;
@@ -274,6 +282,76 @@ namespace Fetex
                 if (heading < 0f) heading += 360f;
             }
             return true;
+        }
+
+        /// <summary>
+        /// 다음 프레임이 없는 차량(사라지기 직전 등)의 위치. 기록 위치를 그대로 쓰지 않고
+        /// 차선 위 점 + (옆 방향을 제한한) 기록 오차로 놓는다. 차선 정보가 없으면 기록 위치.
+        /// </summary>
+        public static bool Place(IList<MotionLane> lanes, in MotionState a, float vehicleLength,
+                                 out float x, out float z, out float heading)
+        {
+            if (lanes == null || a.Lane < 0 || a.Lane >= lanes.Count)
+            {
+                x = a.X; z = a.Z; heading = a.Angle;
+                return false;
+            }
+            float half = vehicleLength * 0.5f;
+            DisplayPoint(lanes, a, half, out x, out z);
+            MotionLane lane = lanes[a.Lane];
+            float s = a.Pos - half;
+            lane.PointAt(s - HeadingProbe, out float bx, out float bz);
+            lane.PointAt(s + HeadingProbe, out float fx, out float fz);
+            float hx = fx - bx, hz = fz - bz;
+            if (hx * hx + hz * hz < 0.0025f)
+            {
+                heading = a.Angle;
+            }
+            else
+            {
+                heading = (float)(Math.Atan2(hx, hz) * 180.0 / Math.PI);
+                if (heading < 0f) heading += 360f;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 한 프레임 상태의 표시 위치: 자기 차선 위 차 중심점 + 기록 위치와의 차이(옆 방향은 ±MaxLateralOffset).
+        /// 보통은 기록 위치 그대로이고, 갓길 정차처럼 옆으로 크게 비켜 기록된 경우만 차선 가장자리로 당긴다.
+        /// 차선 정보가 없으면 기록 위치.
+        /// </summary>
+        static void DisplayPoint(IList<MotionLane> lanes, in MotionState st, float half, out float x, out float z)
+        {
+            if (lanes == null || st.Lane < 0 || st.Lane >= lanes.Count)
+            {
+                x = st.X; z = st.Z;
+                return;
+            }
+            MotionLane lane = lanes[st.Lane];
+            float s = st.Pos - half;
+            lane.PointAt(s, out x, out z);
+            lane.PointAt(s - HeadingProbe, out float bx, out float bz);
+            lane.PointAt(s + HeadingProbe, out float fx, out float fz);
+            float ox = st.X - x, oz = st.Z - z;
+            if (ox * ox + oz * oz > MaxEndpointOffset * MaxEndpointOffset) { ox = 0f; oz = 0f; }
+            ClampLateral(ref ox, ref oz, fx - bx, fz - bz);
+            x += ox;
+            z += oz;
+        }
+
+        /// <summary>오차 벡터 (ox, oz)에서 진행 방향 (tx, tz)에 직각인 성분만 ±MaxLateralOffset으로 제한.</summary>
+        static void ClampLateral(ref float ox, ref float oz, float tx, float tz)
+        {
+            float n = (float)Math.Sqrt(tx * tx + tz * tz);
+            if (n < 1e-6f) return;
+            tx /= n;
+            tz /= n;
+            float along = ox * tx + oz * tz;
+            float lateral = ox * tz - oz * tx;      // + = 진행 방향 오른쪽 (x 동, z 북)
+            float c = Clamp(lateral, -MaxLateralOffset, MaxLateralOffset);
+            if (c == lateral) return;
+            ox = along * tx + c * tz;
+            oz = along * tz - c * tx;
         }
     }
 }
