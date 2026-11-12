@@ -1,4 +1,5 @@
-using UnityEngine;
+﻿using UnityEngine;
+using Fetex;
 
 // 같은 카메라를 운영 탑뷰와 선택 차량 후방 시점 사이에서 전환한다.
 [RequireComponent(typeof(Camera))]
@@ -42,14 +43,28 @@ public sealed class TwinCameraView : MonoBehaviour
             overview = !overview;
             Event.current.Use();
         }
-        GUILayout.BeginArea(new Rect(18, 18, 290, 108), GUI.skin.box);
-        GUILayout.Label("FETEX  /  KAKAO CITY");
-        GUILayout.Label("Scene preview - simulation not connected");
+        GUILayout.BeginArea(new Rect(18, 18, 290, 115), GUI.skin.box);
+        GUILayout.Label("<b>FETEX / KAKAO DIGITAL TWIN</b>");
+        if (FetexReplayPlayer.Instance != null && FetexReplayPlayer.Instance.isLoaded)
+        {
+            GUILayout.Label("<color=#55FF55>● 리플레이 연동 활성화됨</color>");
+        }
+        else
+        {
+            GUILayout.Label("Scene preview - simulation not connected");
+        }
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Overview")) overview = true;
-        if (GUILayout.Button("Follow taxi")) overview = false;
+        if (GUILayout.Button("Overview (탑뷰)")) overview = true;
+        if (GUILayout.Button("Follow (추적뷰)"))
+        {
+            overview = false;
+            if (target == null && FetexReplayPlayer.Instance != null)
+            {
+                FetexReplayPlayer.Instance.SelectFirstTaxiForCamera();
+            }
+        }
         GUILayout.EndHorizontal();
-        GUILayout.Label("TAB: switch camera");
+        GUILayout.Label("단축키 [TAB]: 시점 즉시 전환");
         GUILayout.EndArea();
     }
 }

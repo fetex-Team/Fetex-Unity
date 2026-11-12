@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -7,6 +7,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.SceneManagement;
+using Fetex;
 
 // 제공 프리팹으로 검토용 도시 씬을 만들고 실제 월드 치수를 기록한다.
 public static class KakaoSceneSetup
@@ -51,8 +52,9 @@ public static class KakaoSceneSetup
             Selection.activeGameObject = city;
             if (SceneView.lastActiveSceneView != null) SceneView.lastActiveSceneView.Frame(bounds, true);
             ConfigureViews();
+            SetupReplay();
             AssetDatabase.Refresh();
-            Debug.Log("Fetex: KakaoDigitalTwin scene created; measurements saved.");
+            Debug.Log("Fetex: KakaoDigitalTwin scene created and Replay configured; measurements saved.");
         }
         catch (Exception e)
         {
@@ -83,19 +85,69 @@ public static class KakaoSceneSetup
     {
         var scene = SceneManager.GetSceneByPath(ScenePath);
         if (!scene.IsValid() || !scene.isLoaded) throw new InvalidOperationException("Open KakaoDigitalTwin first.");
-        var taxi = scene.GetRootGameObjects().Single(r => r.name == "Reference Taxi");
-        // 북쪽 진행 차선의 검토 위치. SUMO 연동 시 상태 좌표로 대체한다.
-        taxi.transform.SetPositionAndRotation(new Vector3(88f, 0.02f, -130f), Quaternion.identity);
-        var camera = scene.GetRootGameObjects().Select(r => r.GetComponent<Camera>()).First(c => c != null);
-        var controller = camera.GetComponent<TwinCameraView>();
-        if (controller == null) controller = camera.gameObject.AddComponent<TwinCameraView>();
-        controller.target = taxi.transform;
-        controller.overview = true;
-        controller.ApplyView();
+        var taxi = scene.GetRootGameObjects().FirstOrDefault(r => r.name == "Reference Taxi");
+        if (taxi != null)
+        {
+            // 북쪽 진행 차선의 검토 위치. SUMO 연동 시 상태 좌표로 대체한다.
+            taxi.transform.SetPositionAndRotation(new Vector3(88f, 0.02f, -130f), Quaternion.identity);
+        }
+        var camera = scene.GetRootGameObjects().Select(r => r.GetComponent<Camera>()).FirstOrDefault(c => c != null);
+        if (camera != null)
+        {
+            var controller = camera.GetComponent<TwinCameraView>();
+            if (controller == null) controller = camera.gameObject.AddComponent<TwinCameraView>();
+            if (taxi != null) controller.target = taxi.transform;
+            controller.overview = true;
+            controller.ApplyView();
+        }
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         WriteMeasurements();
         Debug.Log("Fetex: overview/follow cameras configured.");
+    }
+
+    [MenuItem("Fetex/Setup Simulation Replay")]
+    public static void SetupReplay()
+    {
+        var scene = SceneManager.GetSceneByPath(ScenePath);
+        if (!scene.IsValid() || !scene.isLoaded)
+        {
+            if (File.Exists(ScenePath))
+            {
+                scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            }
+            else
+            {
+                Create();
+                scene = SceneManager.GetSceneByPath(ScenePath);
+            }
+        }
+
+        var playerObj = GameObject.Find("[ReplayManager]");
+        if (playerObj == null)
+        {
+            playerObj = new GameObject("[ReplayManager]");
+        }
+
+        var player = playerObj.GetComponent<FetexReplayPlayer>();
+        if (player == null)
+        {
+            player = playerObj.AddComponent<FetexReplayPlayer>();
+        }
+
+        player.taxiPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/object/car_taxi_1.prefab");
+        player.civilianCarPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/object/obs_car_1.prefab");
+        player.obstaclePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/object/obs_kickboard_q.prefab");
+
+        var camera = Camera.main;
+        if (camera != null)
+        {
+            player.cameraView = camera.GetComponent<TwinCameraView>();
+        }
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+        Debug.Log("Fetex: [ReplayManager] successfully configured in KakaoDigitalTwin scene!");
     }
 
     [MenuItem("Fetex/Write Kakao Measurements")]

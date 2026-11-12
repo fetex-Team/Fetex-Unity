@@ -435,6 +435,61 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 6711034360763408804, guid: 1f12fb69f2953934999501002643d8e8, type: 3}
   m_PrefabInstance: {fileID: 130249156}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &156196799
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 156196801}
+  - component: {fileID: 156196800}
+  m_Layer: 0
+  m_Name: '[ReplayManager]'
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &156196800
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 156196799}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2d059aa185cf75b438d2cf70e3328003, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  taxiPrefab: {fileID: 6226704348639804190, guid: 1f12fb69f2953934999501002643d8e8, type: 3}
+  civilianCarPrefab: {fileID: 4069322794619488910, guid: ad7918253be5c7c46a19aeab2a6c9f73, type: 3}
+  obstaclePrefab: {fileID: 7024273186693679391, guid: 49132ce036e1f614e8009952841a95c4, type: 3}
+  replayFileName: rl_prepositioned.json
+  autoPlayOnStart: 1
+  playbackSpeed: 5
+  groundY: 0.05
+  isLoaded: 0
+  isPlaying: 0
+  currentTime: 0
+  cameraView: {fileID: 48372599}
+--- !u!4 &156196801
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 156196799}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &440927687
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -585,3 +640,4 @@ SceneRoots:
   - {fileID: 440927687}
   - {fileID: 130249156}
   - {fileID: 48372598}
+  - {fileID: 156196801}
