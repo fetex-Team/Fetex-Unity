@@ -2,17 +2,54 @@
     <ui:Style src="HUD.uss" />
     <ui:VisualElement name="hudRoot" class="hud-root" picking-mode="Ignore">
         <ui:VisualElement class="top-row" picking-mode="Ignore">
-            <ui:VisualElement name="brandCard" class="card">
-                <ui:VisualElement class="brand-row">
-                    <ui:Label text="FETEX" class="brand-tag" />
-                    <ui:Label text="택시 자동 배차 시뮬레이션" class="brand-title" />
+            <ui:VisualElement class="left-col" picking-mode="Ignore">
+                <ui:VisualElement name="brandCard" class="card">
+                    <ui:VisualElement class="brand-row">
+                        <ui:Label text="FETEX" class="brand-tag" />
+                        <ui:Label text="택시 자동 배차 시뮬레이션" class="brand-title" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="segmented">
+                        <ui:Button name="strategyRl" text="AI 재배치" class="segment" />
+                        <ui:Button name="strategyStatic" text="정적 배치" class="segment" />
+                        <ui:Button name="strategyPatrol" text="순찰 (기준)" class="segment" />
+                    </ui:VisualElement>
+                    <ui:Label name="strategyDetail" text=" " class="caption" />
                 </ui:VisualElement>
-                <ui:VisualElement class="segmented">
-                    <ui:Button name="strategyRl" text="AI 재배치" class="segment" />
-                    <ui:Button name="strategyStatic" text="정적 배치" class="segment" />
-                    <ui:Button name="strategyPatrol" text="순찰 (기준)" class="segment" />
+                <ui:VisualElement name="compareCard" class="card compare-card">
+                    <ui:VisualElement class="section-head">
+                        <ui:Label text="전략 비교" class="section-title" />
+                        <ui:Label name="compareMeta" text="같은 시각 기준" class="section-meta" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="cmp-row cmp-head">
+                        <ui:Label text="전략" class="cmp-name" />
+                        <ui:Label text="이행률" class="cmp-cell" />
+                        <ui:Label text="평균 대기" class="cmp-cell" />
+                        <ui:Label text="대기 승객" class="cmp-cell" />
+                        <ui:Label text="취소" class="cmp-cell" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="cmpRow0" class="cmp-row">
+                        <ui:Label text="AI 재배치" class="cmp-name" />
+                        <ui:Label name="cmpFulfill0" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpWait0" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpWaiting0" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpCancel0" text="…" class="cmp-cell" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="cmpRow1" class="cmp-row">
+                        <ui:Label text="정적 배치" class="cmp-name" />
+                        <ui:Label name="cmpFulfill1" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpWait1" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpWaiting1" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpCancel1" text="…" class="cmp-cell" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="cmpRow2" class="cmp-row">
+                        <ui:Label text="순찰 (기준)" class="cmp-name" />
+                        <ui:Label name="cmpFulfill2" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpWait2" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpWaiting2" text="…" class="cmp-cell" />
+                        <ui:Label name="cmpCancel2" text="…" class="cmp-cell" />
+                    </ui:VisualElement>
+                    <ui:Label name="compareNote" text="초록 = 그 지표에서 가장 좋은 전략 · 행을 누르면 그 전략으로 전환" class="cmp-note" />
                 </ui:VisualElement>
-                <ui:Label name="strategyDetail" text=" " class="caption" />
             </ui:VisualElement>
             <ui:VisualElement class="spacer" picking-mode="Ignore" />
             <ui:VisualElement name="sidePanel" class="card side-panel">

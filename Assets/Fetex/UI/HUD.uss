@@ -430,3 +430,65 @@
     font-size: 13px;
     -unity-text-align: middle-center;
 }
+
+/* ---------- 전략 비교 ---------- */
+.left-col {
+    width: 400px;
+}
+
+.compare-card {
+    margin-top: 12px;
+}
+
+.cmp-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 8px;
+    margin-bottom: 2px;
+    transition-duration: 0.15s;
+}
+
+.cmp-row:hover {
+    background-color: var(--bg-hover);
+}
+
+.cmp-row.is-current {
+    background-color: var(--accent-soft);
+}
+
+.cmp-head {
+    padding-top: 0;
+    padding-bottom: 4px;
+}
+
+.cmp-head > .cmp-name,
+.cmp-head > .cmp-cell {
+    color: var(--text-faint);
+    font-size: 12px;
+    -unity-font-style: normal;
+}
+
+.cmp-name {
+    flex-grow: 1;
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.cmp-cell {
+    width: 66px;
+    font-size: 13px;
+    color: var(--text-dim);
+    -unity-text-align: middle-right;
+}
+
+.cmp-cell.is-best {
+    color: rgb(110, 231, 160);
+    -unity-font-style: bold;
+}
+
+.cmp-note {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-faint);
+}

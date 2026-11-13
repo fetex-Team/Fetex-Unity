@@ -39,6 +39,12 @@ namespace Fetex
         Button chipH3, chipBuildings, viewOverview, viewFollow;
         float nextRefresh;
 
+        // 전략 비교 카드 (행 순서 = Strategies 순서)
+        readonly VisualElement[] cmpRows = new VisualElement[Strategies.Length];
+        readonly Label[,] cmpCells = new Label[Strategies.Length, 4];   // 이행률, 평균 대기, 대기 승객, 취소
+        Label compareMeta;
+        bool comparisonRequested;
+
         static FetexReplayPlayer Player => FetexReplayPlayer.Instance;
         static TwinCameraView Cam => Player != null ? Player.cameraView : null;
 
@@ -113,6 +119,16 @@ namespace Fetex
             root.Q<Button>("prevTaxi").clicked += () => { if (Player != null) Player.SelectTaxiForCamera(-1); };
             root.Q<Button>("nextTaxi").clicked += () => { if (Player != null) Player.SelectTaxiForCamera(1); };
             hintLabel = root.Q<Label>("hintLabel");
+
+            string[] cmpKeys = { "cmpFulfill", "cmpWait", "cmpWaiting", "cmpCancel" };
+            for (int i = 0; i < Strategies.Length; i++)
+            {
+                string file = Strategies[i].file;
+                cmpRows[i] = root.Q("cmpRow" + i);
+                cmpRows[i].RegisterCallback<ClickEvent>(_ => { if (Player != null && Player.replayFileName != file) Player.LoadMapAndReplay(file); });
+                for (int c = 0; c < cmpKeys.Length; c++) cmpCells[i, c] = root.Q<Label>(cmpKeys[c] + i);
+            }
+            compareMeta = root.Q<Label>("compareMeta");
 
             // 버튼이 키보드 포커스를 가져가면 Space가 버튼 클릭으로도 들어가 재생이 두 번 토글된다
             root.Query<Button>().ForEach(b => b.focusable = false);
@@ -211,6 +227,8 @@ namespace Fetex
             fleetMeta.text = $"운행 중 {total:N0}대";
             personCount.text = p.WaitingPeople.ToString("N0");
 
+            RefreshComparison(p, t);
+
             if (!overview)
             {
                 if (p.TryGetFollowedTaxi(out string taxiId, out int index, out int count, out int state))
@@ -224,6 +242,75 @@ namespace Fetex
                 {
                     taxiLabel.text = "운행 중인 택시 없음";
                 }
+            }
+        }
+
+        // ---------- 전략 비교 ----------
+        readonly StrategyKpiSeries.Kpi[] cmpKpi = new StrategyKpiSeries.Kpi[Strategies.Length];
+        readonly bool[] cmpHas = new bool[Strategies.Length];
+
+        void RefreshComparison(FetexReplayPlayer p, float t)
+        {
+            if (!comparisonRequested)
+            {
+                comparisonRequested = true;
+                var files = new string[Strategies.Length];
+                for (int i = 0; i < files.Length; i++) files[i] = Strategies[i].file;
+                p.RequestComparison(files);
+            }
+
+            bool allSame = true;
+            int ready = 0;
+            for (int i = 0; i < Strategies.Length; i++)
+            {
+                cmpHas[i] = p.TryGetStrategyKpi(Strategies[i].file, t, out cmpKpi[i], out bool same);
+                if (cmpHas[i]) { ready++; allSame &= same; }
+                cmpRows[i].EnableInClassList("is-current", p.replayFileName == Strategies[i].file);
+            }
+            compareMeta.text = ready < Strategies.Length ? $"불러오는 중 {ready}/{Strategies.Length}"
+                             : allSame ? $"{p.ClockAt(t, false)} 기준" : "주의: 시나리오가 다른 파일 포함";
+
+            // 열마다 가장 좋은 값(이행률 최대, 나머지 최소)을 초록으로. 값이 모두 같으면 표시하지 않는다.
+            for (int c = 0; c < 4; c++)
+            {
+                float best = float.NaN, worst = float.NaN;
+                for (int i = 0; i < Strategies.Length; i++)
+                {
+                    if (!cmpHas[i]) continue;
+                    float v = Score(cmpKpi[i], c);
+                    if (float.IsNaN(best) || v > best) best = v;
+                    if (float.IsNaN(worst) || v < worst) worst = v;
+                }
+                for (int i = 0; i < Strategies.Length; i++)
+                {
+                    Label cell = cmpCells[i, c];
+                    if (!cmpHas[i]) { cell.text = "…"; cell.RemoveFromClassList("is-best"); continue; }
+                    cell.text = Format(cmpKpi[i], c);
+                    cell.EnableInClassList("is-best", ready > 1 && best > worst && Mathf.Approximately(Score(cmpKpi[i], c), best));
+                }
+            }
+        }
+
+        // 클수록 좋은 점수로 변환 (이행률은 그대로, 대기·대기 승객·취소는 음수)
+        static float Score(StrategyKpiSeries.Kpi k, int column)
+        {
+            switch (column)
+            {
+                case 0: return k.FulfillRate;
+                case 1: return -k.AvgWait;
+                case 2: return -k.Waiting;
+                default: return -k.TimedOut;
+            }
+        }
+
+        static string Format(StrategyKpiSeries.Kpi k, int column)
+        {
+            switch (column)
+            {
+                case 0: return $"{k.FulfillRate:F1}%";
+                case 1: return k.AvgWait < 60f ? $"{k.AvgWait:F0}초" : $"{Mathf.FloorToInt(k.AvgWait / 60f)}분 {Mathf.RoundToInt(k.AvgWait % 60f)}초";
+                case 2: return $"{k.Waiting:N0}명";
+                default: return $"{k.TimedOut:N0}명";
             }
         }
 

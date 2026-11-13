@@ -206,17 +206,8 @@ namespace Fetex
         public float taxiIconPx = 9f;
         public float otherVehicleIconPx = 5f;
         public float personIconPx = 6f;
-        private readonly Dictionary<int, Renderer> iconFills = new Dictionary<int, Renderer>();
-        private readonly Dictionary<int, Transform> iconRoots = new Dictionary<int, Transform>();
-        private readonly Dictionary<int, float> iconPx = new Dictionary<int, float>();
-        private readonly List<Transform> personIcons = new List<Transform>();
-        private bool iconMode = true;
-        private bool iconScaleDirty = true;
-        private float lastIconOrtho = -1f;
-        private int lastIconScreenH = -1;
+        private TopViewIconLayer icons;
         private int selectedEntity = -1;        // 이전/다음 택시 버튼의 현재 대상 (로드 시 자동 선택)
-        private int highlightedEntity = -1;     // 추적 시점에서 실제로 따라간 택시 → 탑뷰에서 굵은 테두리
-        private readonly Dictionary<int, Transform> iconOutlines = new Dictionary<int, Transform>();
         private readonly int[] stateCounts = new int[8];
         private int waitingPeople;
         private Material matIconOutline;
@@ -249,6 +240,7 @@ namespace Fetex
                 unlitTemplate = AssetDatabase.LoadAssetAtPath<Material>("Assets/Fetex/Materials/Mat_StatusUnlit.mat");
 #endif
             InitializeMaterials();
+            icons = new TopViewIconLayer(matIconOutline, matIconOutlineDark);
 
             if (cameraView == null)
             {
@@ -407,7 +399,6 @@ namespace Fetex
             taxiEntities.Clear();
             onRoadTaxis.Clear();
             selectedEntity = -1;
-            highlightedEntity = -1;
             if (replayData.entities != null)
             {
                 for (int i = 0; i < replayData.entities.Count; i++)
@@ -425,8 +416,51 @@ namespace Fetex
             Debug.Log($"[FetexReplayPlayer] Loaded {fileName} in {loadWatch.ElapsedMilliseconds}ms (백그라운드 파싱) (v{replayData.version}, {replayData.frames.Count} frames, stride {replayData.stride}s) | " +
                       $"roads {mapData?.roads?.Count ?? 0}, lanes {motionLanes?.Count ?? 0} | 이동 방식: {(lanePath ? "차선 경로 보간" : "직선 보간(구버전 파일)")}");
 
+            // 전략 비교: 지금 불러온 리플레이는 바로 지표 시계열로 등록 (다른 전략은 RequestComparison이 백그라운드로)
+            if (!kpiSeries.ContainsKey(fileName)) kpiSeries[fileName] = new StrategyKpiSeries(replayData);
+
             UpdateSimulation(0f);
             SelectTaxiForCamera(0);
+        }
+
+        // =====================================================================
+        // 전략 비교 (같은 시각의 세 전략 지표)
+        // =====================================================================
+        private readonly Dictionary<string, StrategyKpiSeries> kpiSeries = new Dictionary<string, StrategyKpiSeries>();
+        private readonly HashSet<string> kpiRequested = new HashSet<string>();
+
+        /// <summary>비교할 리플레이들의 지표 시계열을 백그라운드에서 하나씩 준비한다 (이미 있으면 건너뜀).</summary>
+        public void RequestComparison(IEnumerable<string> files)
+        {
+            var todo = new List<string>();
+            foreach (var f in files) if (kpiRequested.Add(f)) todo.Add(f);
+            if (todo.Count > 0) StartCoroutine(LoadComparisonSeries(todo));
+        }
+
+        private IEnumerator LoadComparisonSeries(List<string> files)
+        {
+            foreach (string file in files)
+            {
+                while (!isLoaded) yield return null;            // 화면에 띄울 리플레이를 먼저 불러온다
+                if (kpiSeries.ContainsKey(file)) continue;
+                string path = ResolveReplayPath(file);
+                if (path == null) { Debug.LogWarning($"[FetexReplayPlayer] 비교용 리플레이 없음: {file}"); continue; }
+                var task = System.Threading.Tasks.Task.Run(() => new StrategyKpiSeries(JsonUtility.FromJson<ReplayData>(ReadReplayText(path))));
+                while (!task.IsCompleted) yield return null;
+                if (task.IsFaulted) Debug.LogWarning($"[FetexReplayPlayer] 비교용 {file} 불러오기 실패: {task.Exception?.GetBaseException().Message}");
+                else if (!kpiSeries.ContainsKey(file)) kpiSeries[file] = task.Result;
+            }
+        }
+
+        /// <summary>file 전략의 time 시각 지표. sameScenario = 지금 재생 중인 리플레이와 같은 시나리오(지문)인지.</summary>
+        public bool TryGetStrategyKpi(string file, float time, out StrategyKpiSeries.Kpi kpi, out bool sameScenario)
+        {
+            sameScenario = true;
+            kpi = default;
+            if (!kpiSeries.TryGetValue(file, out var series)) return false;
+            kpi = series.At(time);
+            sameScenario = replayData == null || string.IsNullOrEmpty(series.Fingerprint) || series.Fingerprint == replayData.fingerprint;
+            return true;
         }
 
         /// <summary>
@@ -582,8 +616,8 @@ namespace Fetex
         {
             if (h3Shown != H3ShouldShow) UpdateH3Visibility();   // 탑뷰/추적뷰 전환 감지
             bool wantIcons = cameraView == null || cameraView.overview;
-            if (wantIcons != iconMode) SetIconMode(wantIcons);
-            if (!wantIcons && selectedEntity != highlightedEntity) SetHighlight(selectedEntity);
+            if (wantIcons != icons.Visible) SetIconMode(wantIcons);
+            if (!wantIcons && selectedEntity != icons.Highlighted) icons.Highlight(selectedEntity);   // 추적 시점에서 따라간 택시
             if (!isLoaded || replayData == null || replayData.frames.Count == 0) return;
 
             if (isPlaying)
@@ -748,16 +782,8 @@ namespace Fetex
             bool isTaxi = k.Contains("taxi") || id.ToLower().Contains("taxi");
             bool bigPin = isTaxi || k.Contains("auto");
             Mesh shape = bigPin ? TopViewIcons.Pin : (prefabToUse == obstaclePrefab ? TopViewIcons.Diamond : TopViewIcons.Disc);
-            Renderer fill = TopViewIcons.Create(instance.transform, shape, isTaxi ? matIdle : matCivilian,
-                                                bigPin ? matIconOutline : matIconOutlineDark, out Transform iconRoot);
-            iconFills[entityIndex] = fill;
-            iconRoots[entityIndex] = iconRoot;
-            iconOutlines[entityIndex] = iconRoot.Find(TopViewIcons.OutlineName);
-            if (entityIndex == highlightedEntity) TopViewIcons.SetHighlighted(iconOutlines[entityIndex], true);
-            iconPx[entityIndex] = bigPin ? taxiIconPx : otherVehicleIconPx;
-            iconRoot.gameObject.SetActive(iconMode);
-            marker.SetActive(!iconMode);
-            iconScaleDirty = true;
+            icons.AddVehicle(entityIndex, instance.transform, shape, bigPin, isTaxi ? matIdle : matCivilian);
+            marker.SetActive(!icons.Visible);
 
             return instance;
         }
@@ -774,7 +800,7 @@ namespace Fetex
             lastVehicleStates[entityIndex] = state;
             Material mat = StateMaterial(state);
             renderer.sharedMaterial = mat;
-            if (iconFills.TryGetValue(entityIndex, out Renderer fill)) fill.sharedMaterial = mat;
+            icons.SetFill(entityIndex, mat);
         }
 
         private Material StateMaterial(int state)
@@ -792,41 +818,17 @@ namespace Fetex
             }
         }
 
-        private void SetHighlight(int entity)
-        {
-            if (iconOutlines.TryGetValue(highlightedEntity, out Transform old) && old != null) TopViewIcons.SetHighlighted(old, false);
-            highlightedEntity = entity;
-            if (iconOutlines.TryGetValue(entity, out Transform now) && now != null) TopViewIcons.SetHighlighted(now, true);
-        }
-
+        // 탑뷰: 아이콘, 추적 시점: 차 위 구체 마커
         private void SetIconMode(bool overview)
         {
-            iconMode = overview;
-            foreach (var kv in iconRoots) if (kv.Value != null) kv.Value.gameObject.SetActive(overview);
+            icons.SetVisible(overview);
             foreach (var kv in statusMarkers) if (kv.Value != null) kv.Value.gameObject.SetActive(!overview);
-            foreach (var t in personIcons) if (t != null) t.gameObject.SetActive(overview);
-            iconScaleDirty = true;
         }
 
-        // 카메라 확대율이 바뀌면 아이콘을 화면상 일정한 크기로 다시 맞춘다 (실제 차보다 작아지지는 않게)
+        // 카메라 확대율이 바뀌면 아이콘을 화면상 일정한 크기로 다시 맞춘다
         private void LateUpdate()
         {
-            if (!iconMode || cameraView == null) return;
-            float ortho = cameraView.overviewSize;
-            if (!iconScaleDirty && Mathf.Approximately(ortho, lastIconOrtho) && Screen.height == lastIconScreenH) return;
-            lastIconOrtho = ortho;
-            lastIconScreenH = Screen.height;
-            iconScaleDirty = false;
-
-            float metersPerPx = 2f * ortho / Mathf.Max(1, Screen.height);
-            foreach (var kv in iconRoots)
-            {
-                if (kv.Value == null) continue;
-                float px = iconPx[kv.Key];
-                TopViewIcons.SetWorldRadius(kv.Value, Mathf.Max(px * metersPerPx, 2.4f));
-            }
-            float personR = Mathf.Max(personIconPx * metersPerPx, 0.8f);
-            foreach (var t in personIcons) if (t != null) TopViewIcons.SetWorldRadius(t, personR);
+            if (cameraView != null) icons.UpdateScale(cameraView.overviewSize, taxiIconPx, otherVehicleIconPx, personIconPx);
         }
 
         private void UpdatePeople(List<PersonPos> people)
@@ -842,10 +844,7 @@ namespace Fetex
                 pin.transform.localScale = new Vector3(0.6f, 1.0f, 0.6f);
                 Destroy(pin.GetComponent<Collider>());
                 pin.GetComponent<Renderer>().sharedMaterial = matPerson;
-                TopViewIcons.Create(pin.transform, TopViewIcons.Diamond, matPerson, matIconOutline, out Transform icon);
-                icon.gameObject.SetActive(iconMode);
-                personIcons.Add(icon);
-                iconScaleDirty = true;
+                icons.AddPerson(pin.transform, matPerson);
                 personPool.Add(pin);
             }
 
@@ -882,7 +881,6 @@ namespace Fetex
             }
             int taxiEntityId = onRoadTaxis[idx];
             selectedEntity = taxiEntityId;
-            iconScaleDirty = true;
 
             if (vehicleInstances.TryGetValue(taxiEntityId, out GameObject taxiObj))
             {
@@ -907,11 +905,7 @@ namespace Fetex
             vehicleInstances.Clear();
             statusMarkers.Clear();
             lastVehicleStates.Clear();
-            iconFills.Clear();
-            iconRoots.Clear();
-            iconPx.Clear();
-            iconOutlines.Clear();
-            personIcons.Clear();
+            icons.Clear();
 
             foreach (var p in personPool)
             {
