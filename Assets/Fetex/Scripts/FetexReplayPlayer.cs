@@ -162,6 +162,10 @@ namespace Fetex
         public GameObject civilianCarPrefab;
         public GameObject obstaclePrefab;
 
+        [Header("Materials")]
+        [Tooltip("상태 마커·탑뷰 아이콘·H3 선에 쓰는 HDRP/Unlit 머티리얼 원본. 에셋으로 참조해야 빌드에서 셰이더가 빠지지 않는다.")]
+        public Material unlitTemplate;
+
         [Header("Simulation Playback")]
         public string replayFileName = "rl_prepositioned.json";
         public bool autoPlayOnStart = true;
@@ -242,6 +246,10 @@ namespace Fetex
         private void Awake()
         {
             Instance = this;
+#if UNITY_EDITOR
+            if (unlitTemplate == null)
+                unlitTemplate = AssetDatabase.LoadAssetAtPath<Material>("Assets/Fetex/Materials/Mat_StatusUnlit.mat");
+#endif
             InitializeMaterials();
 
             if (cameraView == null)
@@ -281,11 +289,15 @@ namespace Fetex
 
         private void InitializeMaterials()
         {
-            Shader shader = Shader.Find("HDRP/Unlit");
-            if (shader == null) shader = Shader.Find("HDRP/Lit");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader == null) shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
+            // 빌드에서는 코드로만 찾는 셰이더(Shader.Find)가 제외될 수 있으므로 에셋으로 참조한 원본을 복제해 쓴다.
+            Shader shader = unlitTemplate != null ? unlitTemplate.shader : null;
+            if (shader == null)
+            {
+                Debug.LogWarning("[FetexReplayPlayer] unlitTemplate이 비어 있어 Shader.Find로 대체합니다. 빌드에서 마커·아이콘이 안 보일 수 있습니다.");
+                shader = Shader.Find("HDRP/Unlit");
+                if (shader == null) shader = Shader.Find("HDRP/Lit");
+                if (shader == null) shader = Shader.Find("Unlit/Color");
+            }
 
             matIdle = CreateStatusMaterial(shader, new Color(0.15f, 0.95f, 0.25f), "Mat_Idle");
             matPickup = CreateStatusMaterial(shader, new Color(1.0f, 0.85f, 0.1f), "Mat_Pickup");
@@ -312,7 +324,10 @@ namespace Fetex
 
         private Material CreateStatusMaterial(Shader shader, Color color, string name)
         {
-            Material mat = new Material(shader) { name = name };
+            // 같은 셰이더의 원본 에셋이 있으면 복제(키워드·렌더 상태까지 원본과 동일 → 빌드에 포함된 변형 사용)
+            bool fromTemplate = unlitTemplate != null && unlitTemplate.shader == shader;
+            Material mat = (fromTemplate ? new Material(unlitTemplate) : new Material(shader));
+            mat.name = name;
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
             if (mat.HasProperty("_Color")) mat.SetColor("_Color", color);
             if (mat.HasProperty("_UnlitColor")) mat.SetColor("_UnlitColor", color);
@@ -340,11 +355,24 @@ namespace Fetex
                     var mapTask = System.Threading.Tasks.Task.Run(() => File.ReadAllText(mapPath, System.Text.Encoding.UTF8));
                     while (!mapTask.IsCompleted) yield return null;
 
-                    if (!mapTask.IsFaulted)
+                    if (mapTask.IsFaulted)
+                    {
+                        Debug.LogError($"[FetexReplayPlayer] map.json 읽기 실패 → 도로·건물 없이 재생합니다: {mapTask.Exception?.GetBaseException().Message}");
+                    }
+                    else
                     {
                         mapJson = mapTask.Result;
-                        try { mapData = JsonUtility.FromJson<MapData>(mapJson); } catch { }
+                        try { mapData = JsonUtility.FromJson<MapData>(mapJson); }
+                        catch (Exception ex) { Debug.LogError($"[FetexReplayPlayer] map.json 파싱 실패 → 도로·건물 없이 재생합니다: {ex.Message}"); }
+                        if (mapData != null && (mapData.roads == null || mapData.roads.Count == 0))
+                        {
+                            Debug.LogError("[FetexReplayPlayer] map.json에 roads가 없습니다 → 도로·건물 없이 재생합니다 (내보내기 버전 확인)");
+                        }
                     }
+                }
+                else
+                {
+                    Debug.LogError($"[FetexReplayPlayer] map.json이 없습니다: {mapPath} → 도로·건물 없이 재생합니다");
                 }
             }
 

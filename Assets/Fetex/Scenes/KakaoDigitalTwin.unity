@@ -472,6 +472,7 @@ MonoBehaviour:
   taxiPrefab: {fileID: 6226704348639804190, guid: 1f12fb69f2953934999501002643d8e8, type: 3}
   civilianCarPrefab: {fileID: 4069322794619488910, guid: ad7918253be5c7c46a19aeab2a6c9f73, type: 3}
   obstaclePrefab: {fileID: 7024273186693679391, guid: 49132ce036e1f614e8009952841a95c4, type: 3}
+  unlitTemplate: {fileID: 2100000, guid: 934d3c7be59960d41a7dc6cc47d5acdb, type: 2}
   replayFileName: rl_prepositioned.json
   autoPlayOnStart: 1
   playbackSpeed: 5
@@ -486,7 +487,6 @@ MonoBehaviour:
   currentTime: 0
   cameraView: {fileID: 48372599}
   taxiIconPx: 9
-  selectedTaxiIconPx: 14
   otherVehicleIconPx: 5
   personIconPx: 6
 --- !u!4 &156196801
