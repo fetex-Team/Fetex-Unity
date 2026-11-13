@@ -59,7 +59,9 @@ namespace Fetex
         private float maxLaneHalfWidth = LaneHalfWidthDefault;
 
         // 건물 배치: 차선 중심선에서 건물 바닥(+여유)까지 최소 거리 = 차로 반폭 + 보도 + 0.8m
-        private const float BuildingGap = 1.5f;     // 건물끼리·건물과 보도 사이 여유
+        private const float BuildingGap = 0.8f;     // 건물끼리·건물과 보도 사이 여유 (강남 가로처럼 거의 붙여 세움)
+        // 자리가 모자라면 같은 건물을 줄여서라도 채운다 (0.65배 ≈ 판교 최저층 33m → 약 21m, 6~7층)
+        private static readonly float[] FitScales = { 1f, 1f, 1f, 0.8f, 0.8f, 0.65f };
         private float BuildingClear => maxLaneHalfWidth + (lib != null ? lib.sidewalkWidth : 3.5f) + 0.8f;
         private readonly SegmentGrid laneGrid = new SegmentGrid(16f);
         private readonly List<Vector2[]> junctions = new List<Vector2[]>();
@@ -69,7 +71,8 @@ namespace Fetex
 
         private readonly Dictionary<(int lane, int side), List<WalkSample>> walks = new Dictionary<(int, int), List<WalkSample>>();
         private readonly HashSet<long> propCells = new HashSet<long>();
-        private readonly HashSet<long> buildingCells = new HashSet<long>();
+        private readonly HashSet<long> buildingCells = new HashSet<long>();     // 건물 바닥 + 여유 (배치 충돌 검사용)
+        private readonly HashSet<long> footprintCells = new HashSet<long>();    // 건물 바닥만 (밀도 측정용)
         private readonly List<Vector2> signalPositions = new List<Vector2>();
 
         // 차선 시작/끝이 신호 교차로(연결 도로 5개 이상)에 닿는지. 횡단보도·정지선·신호등과 도색 생략 구간에 쓴다.
@@ -767,13 +770,14 @@ namespace Fetex
                     WalkSample w = samples[si];
 
                     bool placed = false;
-                    for (int attempt = 0; attempt < 4 && !placed; attempt++)
+                    for (int attempt = 0; attempt < FitScales.Length && !placed; attempt++)
                     {
                         var e = PickBuilding(arterial ? HeightPref.Tall : HeightPref.Low);
                         if (e == null) break;
+                        float scale = FitScales[attempt];
                         bool swap = rng.NextDouble() < 0.5;
-                        float width = swap ? e.size.z : e.size.x;
-                        float depth = swap ? e.size.x : e.size.z;
+                        float width = (swap ? e.size.z : e.size.x) * scale;
+                        float depth = (swap ? e.size.x : e.size.z) * scale;
                         if (cursor + width > lane.Length - 3f) continue;
                         // TryPlaceBuilding과 같은 기준: 바닥(+BuildingGap 여유)이 차선 중심에서 BuildingClear 이상 떨어지도록
                         float fromCenter = BuildingClear + BuildingGap + 0.3f + depth * 0.5f;
@@ -782,36 +786,78 @@ namespace Fetex
                         Vector2 fwd = Left(w.along);
                         if (swap) fwd = w.along;
                         if (rng.NextDouble() < 0.5) fwd = -fwd;
-                        if (TryPlaceBuilding(root.transform, e, center, fwd))
+                        if (TryPlaceBuilding(root.transform, e, center, fwd, scale))
                         {
-                            cursor += width + 2f + (float)rng.NextDouble() * 5f;
+                            cursor += width + BuildingGap * 2f + (float)rng.NextDouble() * 1.5f;
                             placed = true;
                         }
                     }
-                    if (!placed) cursor += 5f;
+                    if (!placed) cursor += 2f;
                 }
             }
 
             // 2) 블록 안쪽 빈 땅
-            const float step = 22f;
+            FillGrid(root.transform, 16f, 4f, attempt => (PickBuilding(HeightPref.Mid), FitScales[Mathf.Min(attempt + 2, FitScales.Length - 1)]), 4);
+            // 3) 남은 틈: 작은 건물을 낮게(5~8층) 줄여 빽빽하게
+            FillGrid(root.transform, 8f, 2f, attempt => (PickSmallBuilding(), 0.55f + (float)rng.NextDouble() * 0.2f), 3);
+            FillGrid(root.transform, 6f, 1.5f, attempt => (PickSmallBuilding(), 0.45f + (float)rng.NextDouble() * 0.15f), 4);
+            Debug.Log($"[GangnamCityBuilder] 판교 에셋 건물 {BuildingCount}동 배치, 건물 지을 수 있는 땅의 {LandCoverage() * 100f:F0}%를 덮음");
+        }
+
+        // 도로·보도·교차로를 뺀 땅(도로망에서 60m 이내) 중 건물 바닥이 덮은 비율. 4m 격자 표본.
+        private float LandCoverage()
+        {
+            int land = 0, covered = 0;
+            float clear = BuildingClear;
+            for (float x = mapRect.xMin; x <= mapRect.xMax; x += 4f)
+            {
+                for (float z = mapRect.yMin; z <= mapRect.yMax; z += 4f)
+                {
+                    var q = new Vector2(x, z);
+                    float d = laneGrid.Nearest(q, 60f, -1, out int near, out _);
+                    if (near < 0 || d < clear || InJunction(q)) continue;
+                    land++;
+                    if (footprintCells.Contains(Key(Mathf.FloorToInt(x / 2f), Mathf.FloorToInt(z / 2f)))) covered++;
+                }
+            }
+            return land > 0 ? (float)covered / land : 0f;
+        }
+
+        // step 간격 격자(± jitter)마다 가장 가까운 도로 방향에 맞춰 건물을 시도한다
+        private void FillGrid(Transform parent, float step, float jitter,
+                              System.Func<int, (CityAssetLibrary.BuildingEntry e, float scale)> pick, int attempts)
+        {
             for (float x = mapRect.xMin; x <= mapRect.xMax; x += step)
             {
                 for (float z = mapRect.yMin; z <= mapRect.yMax; z += step)
                 {
-                    Vector2 p = new Vector2(x + Jitter(5f), z + Jitter(5f));
+                    Vector2 p = new Vector2(x + Jitter(jitter), z + Jitter(jitter));
                     float d = laneGrid.Nearest(p, 90f, -1, out int nearLane, out Vector2 dir);
-                    if (nearLane < 0 || d < 8f) continue;
-                    for (int attempt = 0; attempt < 3; attempt++)
+                    if (nearLane < 0 || d < BuildingClear) continue;
+                    if (buildingCells.Contains(Key(Mathf.FloorToInt(p.x / 2f), Mathf.FloorToInt(p.y / 2f)))) continue;
+                    for (int attempt = 0; attempt < attempts; attempt++)
                     {
-                        var e = PickBuilding(HeightPref.Mid);
+                        var (e, scale) = pick(attempt);
                         if (e == null) break;
-                        bool swap = rng.NextDouble() < 0.5;
-                        Vector2 fwd = swap ? dir : Left(dir);
-                        if (TryPlaceBuilding(root.transform, e, p, fwd)) break;
+                        Vector2 fwd = rng.NextDouble() < 0.5 ? dir : Left(dir);
+                        if (TryPlaceBuilding(parent, e, p, fwd, scale)) break;
                     }
                 }
             }
-            Debug.Log($"[GangnamCityBuilder] 판교 에셋 건물 {BuildingCount}동 배치");
+        }
+
+        // 바닥 면적이 작은 건물 6종 가운데 하나 (틈 메우기용, 수가 많으니 가벼운 메시만)
+        private List<CityAssetLibrary.BuildingEntry> smallBuildings;
+        private CityAssetLibrary.BuildingEntry PickSmallBuilding()
+        {
+            if (smallBuildings == null)
+            {
+                smallBuildings = new List<CityAssetLibrary.BuildingEntry>();
+                foreach (var b in lib.buildings) if (b != null && b.prefab != null && b.weight >= 0.75f) smallBuildings.Add(b);   // 폴리곤 많은 08·12 제외
+                smallBuildings.Sort((a, b) => (a.size.x * a.size.z).CompareTo(b.size.x * b.size.z));
+                if (smallBuildings.Count > 6) smallBuildings.RemoveRange(6, smallBuildings.Count - 6);
+            }
+            return smallBuildings.Count > 0 ? smallBuildings[rng.Next(smallBuildings.Count)] : null;
         }
 
         private enum HeightPref { Tall, Mid, Low }
@@ -848,12 +894,12 @@ namespace Fetex
             return lib.buildings[last];   // 부동소수 오차로 끝까지 온 경우
         }
 
-        // fwd = 건물 로컬 +Z 방향. 바닥 사각형(로컬 X=size.x, Z=size.z, 여유 1.5m)이 도로·보도·교차로·다른 건물과 겹치지 않을 때만 배치.
-        private bool TryPlaceBuilding(Transform parent, CityAssetLibrary.BuildingEntry e, Vector2 center, Vector2 fwd)
+        // fwd = 건물 로컬 +Z 방향. 바닥 사각형(로컬 X=size.x, Z=size.z에 scale, 여유 BuildingGap)이 도로·보도·교차로·다른 건물과 겹치지 않을 때만 배치.
+        private bool TryPlaceBuilding(Transform parent, CityAssetLibrary.BuildingEntry e, Vector2 center, Vector2 fwd, float scale = 1f)
         {
             Vector2 alongDir = new Vector2(fwd.y, -fwd.x);   // 로컬 +X
-            float hx = e.size.x * 0.5f + BuildingGap;
-            float hz = e.size.z * 0.5f + BuildingGap;
+            float hx = e.size.x * scale * 0.5f + BuildingGap;
+            float hz = e.size.z * scale * 0.5f + BuildingGap;
             if (!mapRect.Contains(center)) return false;
 
             // 가장 넓은 차선 기준으로 차로+보도+여유를 비운다 (현재 map.json은 전 차선 3.2m)
@@ -876,11 +922,13 @@ namespace Fetex
                 for (float v = -hz; v <= hz + 0.01f; v += 1f)
                 {
                     Vector2 q = center + alongDir * u + fwd * v;
-                    buildingCells.Add(Key(Mathf.FloorToInt(q.x / 2f), Mathf.FloorToInt(q.y / 2f)));
+                    long key = Key(Mathf.FloorToInt(q.x / 2f), Mathf.FloorToInt(q.y / 2f));
+                    buildingCells.Add(key);
+                    if (Mathf.Abs(u) <= hx - BuildingGap && Mathf.Abs(v) <= hz - BuildingGap) footprintCells.Add(key);
                 }
             }
 
-            var go = Place(e.prefab, parent, center, fwd, 1f, YGround);
+            var go = Place(e.prefab, parent, center, fwd, scale, YGround);
             go.name = $"{e.prefab.name}_{BuildingCount}";
             BuildingCount++;
             return true;

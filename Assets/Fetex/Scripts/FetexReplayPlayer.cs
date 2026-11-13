@@ -202,7 +202,6 @@ namespace Fetex
         // 탑뷰 아이콘 (상태 색 핀 / 승객 마름모). 추적 시점에서는 숨기고 기존 구체 마커를 쓴다.
         [Header("Top-view icons (screen px radius)")]
         public float taxiIconPx = 9f;
-        public float selectedTaxiIconPx = 14f;
         public float otherVehicleIconPx = 5f;
         public float personIconPx = 6f;
         private readonly Dictionary<int, Renderer> iconFills = new Dictionary<int, Renderer>();
@@ -213,7 +212,9 @@ namespace Fetex
         private bool iconScaleDirty = true;
         private float lastIconOrtho = -1f;
         private int lastIconScreenH = -1;
-        private int selectedEntity = -1;
+        private int selectedEntity = -1;        // 이전/다음 택시 버튼의 현재 대상 (로드 시 자동 선택)
+        private int highlightedEntity = -1;     // 추적 시점에서 실제로 따라간 택시 → 탑뷰에서 굵은 테두리
+        private readonly Dictionary<int, Transform> iconOutlines = new Dictionary<int, Transform>();
         private readonly int[] stateCounts = new int[8];
         private int waitingPeople;
         private Material matIconOutline;
@@ -397,6 +398,7 @@ namespace Fetex
             taxiEntities.Clear();
             onRoadTaxis.Clear();
             selectedEntity = -1;
+            highlightedEntity = -1;
             if (replayData.entities != null)
             {
                 for (int i = 0; i < replayData.entities.Count; i++)
@@ -582,6 +584,7 @@ namespace Fetex
             if (h3Shown != H3ShouldShow) UpdateH3Visibility();   // 탑뷰/추적뷰 전환 감지
             bool wantIcons = cameraView == null || cameraView.overview;
             if (wantIcons != iconMode) SetIconMode(wantIcons);
+            if (!wantIcons && selectedEntity != highlightedEntity) SetHighlight(selectedEntity);
             if (!isLoaded || replayData == null || replayData.frames.Count == 0) return;
 
             if (isPlaying)
@@ -750,6 +753,8 @@ namespace Fetex
                                                 bigPin ? matIconOutline : matIconOutlineDark, out Transform iconRoot);
             iconFills[entityIndex] = fill;
             iconRoots[entityIndex] = iconRoot;
+            iconOutlines[entityIndex] = iconRoot.Find(TopViewIcons.OutlineName);
+            if (entityIndex == highlightedEntity) TopViewIcons.SetHighlighted(iconOutlines[entityIndex], true);
             iconPx[entityIndex] = bigPin ? taxiIconPx : otherVehicleIconPx;
             iconRoot.gameObject.SetActive(iconMode);
             marker.SetActive(!iconMode);
@@ -788,6 +793,13 @@ namespace Fetex
             }
         }
 
+        private void SetHighlight(int entity)
+        {
+            if (iconOutlines.TryGetValue(highlightedEntity, out Transform old) && old != null) TopViewIcons.SetHighlighted(old, false);
+            highlightedEntity = entity;
+            if (iconOutlines.TryGetValue(entity, out Transform now) && now != null) TopViewIcons.SetHighlighted(now, true);
+        }
+
         private void SetIconMode(bool overview)
         {
             iconMode = overview;
@@ -811,7 +823,7 @@ namespace Fetex
             foreach (var kv in iconRoots)
             {
                 if (kv.Value == null) continue;
-                float px = kv.Key == selectedEntity ? selectedTaxiIconPx : iconPx[kv.Key];
+                float px = iconPx[kv.Key];
                 TopViewIcons.SetWorldRadius(kv.Value, Mathf.Max(px * metersPerPx, 2.4f));
             }
             float personR = Mathf.Max(personIconPx * metersPerPx, 0.8f);
@@ -899,6 +911,7 @@ namespace Fetex
             iconFills.Clear();
             iconRoots.Clear();
             iconPx.Clear();
+            iconOutlines.Clear();
             personIcons.Clear();
 
             foreach (var p in personPool)

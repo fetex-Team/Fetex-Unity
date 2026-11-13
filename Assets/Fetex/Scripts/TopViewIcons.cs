@@ -10,6 +10,17 @@ namespace Fetex
     public static class TopViewIcons
     {
         public const float IconAltitude = 200f;
+        public const string OutlineName = "Outline";
+        const float OutlineScale = 1.3f;            // 채움 대비 흰 테두리 크기
+        const float HighlightOutlineScale = 1.75f;  // 추적했던 택시: 크기는 같고 테두리만 굵게
+
+        /// <summary>테두리만 굵게/원래대로. 아이콘 자체 크기(채움)는 바꾸지 않는다.</summary>
+        public static void SetHighlighted(Transform outline, bool on)
+        {
+            if (outline == null) return;
+            float s = on ? HighlightOutlineScale : OutlineScale;
+            outline.localScale = new Vector3(s, 1f, s);
+        }
 
         private static Mesh pinMesh;
         private static Mesh discMesh;
@@ -31,8 +42,8 @@ namespace Fetex
             float sy = Mathf.Max(1e-4f, parent.lossyScale.y);
             root.localPosition = new Vector3(0f, (IconAltitude - parent.position.y) / sy, 0f);
 
-            var border = NewPart("Outline", root, shape, outline);
-            border.transform.localScale = Vector3.one * 1.3f;
+            var border = NewPart(OutlineName, root, shape, outline);
+            border.transform.localScale = Vector3.one * OutlineScale;
             border.transform.localPosition = new Vector3(0f, -0.05f, 0f);
 
             return NewPart("Fill", root, shape, fill);
