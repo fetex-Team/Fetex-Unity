@@ -13,6 +13,8 @@ public sealed class TwinCameraView : MonoBehaviour
     public float overviewSize = 225f;
     public Vector3 followOffset = new Vector3(0, 3.5f, -9f);
     public bool overview = true;
+    [Tooltip("추적 시점 회전 추종 속도 (클수록 빨리 따라감, 1/초)")]
+    public float followTurnRate = 4f;
 
     [Header("Overview pan / zoom")]
     public float minOverviewSize = 25f;
@@ -29,6 +31,11 @@ public sealed class TwinCameraView : MonoBehaviour
     float homeSize;
     bool dragging;
     Vector3 dragAnchor;
+    // 추적 시점 상태
+    Transform followTarget;
+    float followYaw;
+    Vector3 lastTargetPos;
+    bool wasOverview = true;
 
     void Awake()
     {
@@ -64,9 +71,18 @@ public sealed class TwinCameraView : MonoBehaviour
         }
         else if (target != null)
         {
-            transform.position = target.position + target.rotation * followOffset;
-            transform.LookAt(target.position + target.forward * 5f + Vector3.up * 1.1f);
+            // 차 방향(yaw)만 부드럽게 따라간다. 위치는 정확히 따라가야 고배속에서도 차를 놓치지 않는다.
+            float targetYaw = target.eulerAngles.y;
+            bool snap = target != followTarget || wasOverview || (target.position - lastTargetPos).sqrMagnitude > 30f * 30f;
+            followYaw = snap ? targetYaw : Mathf.LerpAngle(followYaw, targetYaw, 1f - Mathf.Exp(-followTurnRate * Time.unscaledDeltaTime));
+            followTarget = target;
+            lastTargetPos = target.position;
+
+            Quaternion yaw = Quaternion.Euler(0f, followYaw, 0f);
+            transform.position = target.position + yaw * followOffset;
+            transform.LookAt(target.position + yaw * Vector3.forward * 5f + Vector3.up * 1.1f);
         }
+        wasOverview = overview;
     }
 
     public void ResetOverview()

@@ -178,7 +178,6 @@ namespace Fetex
         public bool showGangnamRoadNetwork = true;
         public bool showGangnamBuildings = true;
         public bool showH3Cells = true;
-        public bool hideSample3x3City = true;
 
         [Header("Live State")]
         public bool isLoaded = false;
@@ -198,7 +197,6 @@ namespace Fetex
         private GameObject roadNetworkObject;
         private GameObject buildingsContainerObject;
         private readonly List<GameObject> h3CellObjects = new List<GameObject>();
-        private GameObject sampleCityObject;
 
         private readonly Dictionary<int, GameObject> vehicleInstances = new Dictionary<int, GameObject>();
         private readonly Dictionary<int, Renderer> statusMarkers = new Dictionary<int, Renderer>();
@@ -257,8 +255,6 @@ namespace Fetex
                 cameraView = FindFirstObjectByType<TwinCameraView>();
             }
 
-            FindSampleCityObject();
-
 #if UNITY_EDITOR
             if (taxiPrefab == null)
                 taxiPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/object/car_taxi_1.prefab");
@@ -274,17 +270,6 @@ namespace Fetex
         private void Start()
         {
             LoadMapAndReplay(replayFileName);
-        }
-
-        private void FindSampleCityObject()
-        {
-            sampleCityObject = GameObject.Find("street_main_1(Clone)");
-            if (sampleCityObject == null) sampleCityObject = GameObject.Find("street_main_1");
-            if (sampleCityObject == null)
-            {
-                var cityObj = GameObject.Find("City") ?? GameObject.Find("Map");
-                if (cityObj != null) sampleCityObject = cityObj;
-            }
         }
 
         private void InitializeMaterials()
@@ -334,13 +319,16 @@ namespace Fetex
             return mat;
         }
 
+        private int loadVersion;   // 마지막으로 요청한 불러오기 번호 (빠르게 전략을 바꿔 눌렀을 때 이전 결과 무시)
+
         public void LoadMapAndReplay(string fileName)
         {
             replayFileName = fileName;
-            StartCoroutine(LoadAllCoroutine(fileName));
+            loadVersion++;
+            StartCoroutine(LoadAllCoroutine(fileName, loadVersion));
         }
 
-        private IEnumerator LoadAllCoroutine(string fileName)
+        private IEnumerator LoadAllCoroutine(string fileName, int version)
         {
             isLoaded = false;
             isPlaying = false;
@@ -392,26 +380,19 @@ namespace Fetex
                 yield break;
             }
 
-            string replayJson = null;
-            var replayTask = System.Threading.Tasks.Task.Run(() => ReadReplayText(replayPath));
+            // 압축 해제와 JSON 파싱(43MB, 약 1초)을 모두 백그라운드에서 → 불러오기·전략 전환 때 화면이 멈추지 않는다.
+            // JsonUtility.FromJson은 UnityEngine.Object가 아닌 [Serializable] 클래스라면 백그라운드 스레드에서 호출 가능.
+            var loadWatch = System.Diagnostics.Stopwatch.StartNew();
+            var replayTask = System.Threading.Tasks.Task.Run(() => JsonUtility.FromJson<ReplayData>(ReadReplayText(replayPath)));
             while (!replayTask.IsCompleted) yield return null;
+            if (version != loadVersion) yield break;   // 그사이 다른 전략을 눌렀으면 이 결과는 버린다
 
             if (replayTask.IsFaulted)
             {
-                Debug.LogError($"[FetexReplayPlayer] Read error: {replayTask.Exception}");
+                Debug.LogError($"[FetexReplayPlayer] {fileName} 읽기/파싱 실패: {replayTask.Exception?.GetBaseException()}");
                 yield break;
             }
-
-            replayJson = replayTask.Result;
-            try
-            {
-                replayData = JsonUtility.FromJson<ReplayData>(replayJson);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[FetexReplayPlayer] Parse error: {ex}");
-                yield break;
-            }
+            replayData = replayTask.Result;
 
             if (replayData == null || replayData.frames == null || replayData.frames.Count == 0)
             {
@@ -441,10 +422,9 @@ namespace Fetex
             }
 
             bool lanePath = UseLanePath;
-            Debug.Log($"[FetexReplayPlayer] Loaded {fileName} (v{replayData.version}, {replayData.frames.Count} frames, stride {replayData.stride}s) | " +
+            Debug.Log($"[FetexReplayPlayer] Loaded {fileName} in {loadWatch.ElapsedMilliseconds}ms (백그라운드 파싱) (v{replayData.version}, {replayData.frames.Count} frames, stride {replayData.stride}s) | " +
                       $"roads {mapData?.roads?.Count ?? 0}, lanes {motionLanes?.Count ?? 0} | 이동 방식: {(lanePath ? "차선 경로 보간" : "직선 보간(구버전 파일)")}");
 
-            ApplyCityVisibility();
             UpdateSimulation(0f);
             SelectTaxiForCamera(0);
         }
@@ -595,15 +575,6 @@ namespace Fetex
             foreach (var cellObj in h3CellObjects)
             {
                 if (cellObj != null) cellObj.SetActive(h3Shown);
-            }
-        }
-
-        private void ApplyCityVisibility()
-        {
-            if (sampleCityObject == null) FindSampleCityObject();
-            if (sampleCityObject != null)
-            {
-                sampleCityObject.SetActive(!hideSample3x3City);
             }
         }
 

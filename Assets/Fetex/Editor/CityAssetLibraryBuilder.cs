@@ -105,6 +105,7 @@ public static class CityAssetLibraryBuilder
             }
         }
 
+        var farMat = PaintMaterial("Mat_BuildingFar", new Color(0.78f, 0.80f, 0.83f));
         var entries = new List<CityAssetLibrary.BuildingEntry>();
         foreach (var kv in seen)
         {
@@ -118,6 +119,7 @@ public static class CityAssetLibraryBuilder
             Bounds b = RendererBounds(root);
             body.transform.localPosition = new Vector3(-b.center.x, -b.min.y, -b.center.z);
             b = RendererBounds(root);
+            AddFarLod(root, body, b, farMat);
 
             string path = $"{PrefabDir}/{kv.Key}.prefab";
             var prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
@@ -130,6 +132,31 @@ public static class CityAssetLibraryBuilder
             });
         }
         return entries.ToArray();
+    }
+
+    // 멀리서(화면 높이의 FarLodScreenHeight 미만) 보일 때는 바운드 크기 상자 하나로 그린다.
+    // LOD 크기는 건물의 가장 긴 변(대개 높이) 기준. 탑뷰 기본 배율(화면 450m)에서는 높이 31.5m 이상 원본,
+    // 최대 축소(화면 1040m)에서는 73m 이상만 원본 → 축소할수록 저층부터 상자로 바뀐다.
+    const float FarLodScreenHeight = 0.07f;
+
+    static void AddFarLod(GameObject root, GameObject body, Bounds b, Material farMat)
+    {
+        var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        Object.DestroyImmediate(box.GetComponent<Collider>());
+        box.name = "LOD1_Box";
+        box.transform.SetParent(root.transform, false);
+        box.transform.localPosition = new Vector3(b.center.x, b.size.y * 0.5f, b.center.z);
+        box.transform.localScale = b.size;
+        var boxRenderer = box.GetComponent<MeshRenderer>();
+        boxRenderer.sharedMaterial = farMat;
+
+        var lod = root.AddComponent<LODGroup>();
+        lod.SetLODs(new[]
+        {
+            new LOD(FarLodScreenHeight, body.GetComponentsInChildren<Renderer>(true)),
+            new LOD(0f, new Renderer[] { boxRenderer }),
+        });
+        lod.RecalculateBounds();
     }
 
     // street_main_1 샘플에서 신호등 헤드까지 조립된 기둥을 그대로 복제.
